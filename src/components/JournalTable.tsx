@@ -2,7 +2,15 @@
 
 import { ArrowDownRight, ArrowUpRight, ExternalLink, Plus } from "lucide-react";
 import type { Trade } from "@/lib/types";
-import { cn, formatCurrency, formatR, formatSignedCurrency, formatSignedPercent, isClosed, tradesWithRunningBalance } from "@/lib/utils";
+import {
+  cn,
+  formatCurrency,
+  formatR,
+  formatSignedCurrency,
+  formatSignedPercent,
+  isClosed,
+  tradesWithRunningBalance,
+} from "@/lib/utils";
 
 function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString("en-US", {
@@ -26,7 +34,10 @@ export default function JournalTable({
   const rows = tradesWithRunningBalance(trades, startingBalance);
 
   return (
-    <div id="journal" className="rounded-2xl border border-border bg-card scroll-mt-20 overflow-hidden">
+    <div
+      id="journal"
+      className="rounded-2xl border border-border bg-card scroll-mt-20 overflow-hidden"
+    >
       <div className="flex items-center justify-between px-5 py-4">
         <h3 className="text-sm font-semibold">Journal</h3>
         <button
@@ -51,7 +62,7 @@ export default function JournalTable({
         </div>
       ) : (
         <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+          <table className="min-w-[800px] w-full text-sm">
             <thead>
               <tr className="border-y border-border text-left text-xs uppercase tracking-wide text-muted">
                 <th className="px-4 py-2.5 font-medium">Open</th>
@@ -76,25 +87,50 @@ export default function JournalTable({
                     onClick={() => onEdit(t)}
                     className="cursor-pointer border-b border-border last:border-0 transition-colors hover:bg-surface-2"
                   >
-                    <td className="whitespace-nowrap px-4 py-3 text-muted">{formatDate(t.openDate)}</td>
                     <td className="whitespace-nowrap px-4 py-3 text-muted">
-                      {t.closeDate ? formatDate(t.closeDate) : <span className="rounded bg-accent/10 px-1.5 py-0.5 text-xs text-accent">Open</span>}
+                      {formatDate(t.openDate)}
+                    </td>
+                    <td className="whitespace-nowrap px-4 py-3 text-muted">
+                      {t.closeDate ? (
+                        formatDate(t.closeDate)
+                      ) : (
+                        <span className="rounded bg-accent/10 px-1.5 py-0.5 text-xs text-accent">
+                          Open
+                        </span>
+                      )}
                     </td>
                     <td className="px-4 py-3 font-medium">{t.pair}</td>
                     <td className="px-4 py-3">
                       <span
                         className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs font-medium"
                         style={{
-                          backgroundColor: t.direction === "LONG" ? "var(--profit-soft)" : "var(--loss-soft)",
-                          color: t.direction === "LONG" ? "var(--profit)" : "var(--loss)",
+                          backgroundColor:
+                            t.direction === "LONG"
+                              ? "var(--profit-soft)"
+                              : "var(--loss-soft)",
+                          color:
+                            t.direction === "LONG"
+                              ? "var(--profit)"
+                              : "var(--loss)",
                         }}
                       >
-                        {t.direction === "LONG" ? <ArrowUpRight className="h-3 w-3" /> : <ArrowDownRight className="h-3 w-3" />}
+                        {t.direction === "LONG" ? (
+                          <ArrowUpRight className="h-3 w-3" />
+                        ) : (
+                          <ArrowDownRight className="h-3 w-3" />
+                        )}
                         {t.direction === "LONG" ? "Long" : "Short"}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-muted">{t.exitLogic || "—"}</td>
-                    <td className={cn("whitespace-nowrap px-4 py-3 text-right font-semibold tabular-nums", positive ? "text-profit" : "text-loss")}>
+                    <td className="px-4 py-3 text-muted">
+                      {t.exitLogic || "—"}
+                    </td>
+                    <td
+                      className={cn(
+                        "whitespace-nowrap px-4 py-3 text-right font-semibold tabular-nums",
+                        positive ? "text-profit" : "text-loss",
+                      )}
+                    >
                       {closed ? formatSignedCurrency(t.pnl) : "—"}
                     </td>
                     <td className="whitespace-nowrap px-4 py-3 text-right font-medium tabular-nums text-muted">

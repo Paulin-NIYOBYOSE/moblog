@@ -1,7 +1,13 @@
 "use client";
 
 import type { Stats, Trade } from "@/lib/types";
-import { formatCurrency, formatR, formatSignedCurrency, formatPercent } from "@/lib/utils";
+import {
+  formatCurrency,
+  formatR,
+  formatSignedCurrency,
+  formatPercent,
+  isClosed,
+} from "@/lib/utils";
 
 function Donut({ winRate }: { winRate: number }) {
   const r = 34;
@@ -10,22 +16,60 @@ function Donut({ winRate }: { winRate: number }) {
   return (
     <div className="relative h-24 w-24 shrink-0">
       <svg viewBox="0 0 80 80" className="h-full w-full -rotate-90">
-        <circle cx="40" cy="40" r={r} fill="none" stroke="var(--loss)" strokeWidth="9" opacity="0.85" />
-        <circle cx="40" cy="40" r={r} fill="none" stroke="var(--profit)" strokeWidth="9" strokeDasharray={`${dash} ${c - dash}`} strokeLinecap="round" />
+        <circle
+          cx="40"
+          cy="40"
+          r={r}
+          fill="none"
+          stroke="var(--loss)"
+          strokeWidth="9"
+          opacity="0.85"
+        />
+        <circle
+          cx="40"
+          cy="40"
+          r={r}
+          fill="none"
+          stroke="var(--profit)"
+          strokeWidth="9"
+          strokeDasharray={`${dash} ${c - dash}`}
+          strokeLinecap="round"
+        />
       </svg>
       <div className="absolute inset-0 flex flex-col items-center justify-center">
-        <span className="text-lg font-semibold tabular-nums">{formatPercent(winRate, 0)}</span>
-        <span className="text-[10px] uppercase tracking-wide text-muted">win</span>
+        <span className="text-lg font-semibold tabular-nums">
+          {formatPercent(winRate, 0)}
+        </span>
+        <span className="text-[10px] uppercase tracking-wide text-muted">
+          win
+        </span>
       </div>
     </div>
   );
 }
 
-function Row({ label, value, tone }: { label: string; value: string; tone?: "profit" | "loss" }) {
+function Row({
+  label,
+  value,
+  tone,
+}: {
+  label: string;
+  value: string;
+  tone?: "profit" | "loss";
+}) {
   return (
     <div className="flex items-center justify-between py-2 text-sm">
       <span className="text-muted">{label}</span>
-      <span className="font-medium tabular-nums" style={tone ? { color: tone === "profit" ? "var(--profit)" : "var(--loss)" } : undefined}>{value}</span>
+      <span
+        className="font-medium tabular-nums"
+        style={
+          tone
+            ? { color: tone === "profit" ? "var(--profit)" : "var(--loss)" }
+            : undefined
+        }
+      >
+        {value}
+      </span>
     </div>
   );
 }
@@ -45,18 +89,28 @@ function topSetups(trades: Trade[]) {
     .slice(0, 4);
 }
 
-export default function Analytics({ stats, trades }: { stats: Stats; trades: Trade[] }) {
-  const setups = topSetups(trades);
+export default function Analytics({
+  stats,
+  trades,
+}: {
+  stats: Stats;
+  trades: Trade[];
+}) {
+  const closed = trades.filter(isClosed);
+  const setups = topSetups(closed);
   const maxAbs = Math.max(1, ...setups.map((s) => Math.abs(s.pnl)));
 
   return (
-    <div id="analytics" className="rounded-2xl border border-border bg-card p-5 scroll-mt-20">
+    <div
+      id="analytics"
+      className="rounded-2xl border border-border bg-card p-5 scroll-mt-20"
+    >
       <h3 className="text-sm font-semibold">Performance breakdown</h3>
 
-      <div className="mt-4 flex items-center gap-5">
+      <div className="mt-4 flex flex-col gap-5 sm:flex-row sm:items-center">
         <Donut winRate={stats.winRate} />
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-4 text-sm">
+          <div className="flex flex-wrap items-center gap-4 text-sm">
             <div className="flex items-center gap-1.5">
               <span className="h-2.5 w-2.5 rounded-full bg-profit" />
               <span className="text-muted">Wins</span>
@@ -67,20 +121,59 @@ export default function Analytics({ stats, trades }: { stats: Stats; trades: Tra
               <span className="text-muted">Losses</span>
               <span className="font-medium tabular-nums">{stats.losses}</span>
             </div>
+            {stats.breakeven > 0 && (
+              <div className="flex items-center gap-1.5">
+                <span className="h-2.5 w-2.5 rounded-full bg-muted" />
+                <span className="text-muted">Break-even</span>
+                <span className="font-medium tabular-nums">
+                  {stats.breakeven}
+                </span>
+              </div>
+            )}
           </div>
           <div className="mt-2 divide-y divide-border">
-            <Row label="Best streak" value={`${stats.maxWinStreak} wins`} tone="profit" />
-            <Row label="Worst streak" value={`${stats.maxLossStreak} losses`} tone="loss" />
-            <Row label="Best day" value={formatSignedCurrency(stats.bestDay)} tone="profit" />
-            <Row label="Worst day" value={formatSignedCurrency(stats.worstDay)} tone="loss" />
+            <Row
+              label="Best streak"
+              value={`${stats.maxWinStreak} wins`}
+              tone="profit"
+            />
+            <Row
+              label="Worst streak"
+              value={`${stats.maxLossStreak} losses`}
+              tone="loss"
+            />
+            <Row
+              label="Best day"
+              value={formatSignedCurrency(stats.bestDay)}
+              tone="profit"
+            />
+            <Row
+              label="Worst day"
+              value={formatSignedCurrency(stats.worstDay)}
+              tone="loss"
+            />
+            <Row
+              label="Avg per trade"
+              value={formatSignedCurrency(stats.avgPerTrade)}
+              tone={stats.avgPerTrade >= 0 ? "profit" : "loss"}
+            />
+            <Row
+              label="Expectancy"
+              value={formatSignedCurrency(stats.expectancy)}
+              tone={stats.expectancy >= 0 ? "profit" : "loss"}
+            />
           </div>
         </div>
       </div>
 
       <div className="mt-4 border-t border-border pt-3">
-        <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted">Top setups</p>
+        <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted">
+          Top setups
+        </p>
         {setups.length === 0 ? (
-          <p className="py-3 text-sm text-muted">Add a setup tag to your trades to see what works best.</p>
+          <p className="py-3 text-sm text-muted">
+            Add a setup tag to your trades to see what works best.
+          </p>
         ) : (
           <div className="space-y-2.5">
             {setups.map((s) => {
@@ -90,12 +183,23 @@ export default function Analytics({ stats, trades }: { stats: Stats; trades: Tra
                 <div key={s.setup}>
                   <div className="mb-1 flex items-center justify-between text-xs">
                     <span className="truncate font-medium">{s.setup}</span>
-                    <span className="tabular-nums" style={{ color: positive ? "var(--profit)" : "var(--loss)" }}>
-                      {formatSignedCurrency(s.pnl)}
+                    <span
+                      className="tabular-nums"
+                      style={{
+                        color: positive ? "var(--profit)" : "var(--loss)",
+                      }}
+                    >
+                      {formatSignedCurrency(s.pnl)} · {s.count}
                     </span>
                   </div>
                   <div className="h-1.5 w-full overflow-hidden rounded-full bg-surface-2">
-                    <div className="h-full rounded-full" style={{ width: `${width}%`, background: positive ? "var(--profit)" : "var(--loss)" }} />
+                    <div
+                      className="h-full rounded-full"
+                      style={{
+                        width: `${width}%`,
+                        background: positive ? "var(--profit)" : "var(--loss)",
+                      }}
+                    />
                   </div>
                 </div>
               );
@@ -105,8 +209,10 @@ export default function Analytics({ stats, trades }: { stats: Stats; trades: Tra
       </div>
 
       <div className="mt-4 border-t border-border pt-3">
-        <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted">Exit logic</p>
-        <ExitLogicBreakdown trades={trades} />
+        <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted">
+          Exit logic
+        </p>
+        <ExitLogicBreakdown trades={closed} />
       </div>
     </div>
   );
@@ -125,13 +231,22 @@ function ExitLogicBreakdown({ trades }: { trades: Trade[] }) {
     .map(([label, v]) => ({ label, ...v }))
     .sort((a, b) => b.count - a.count)
     .slice(0, 4);
-  if (items.length === 0) return <p className="py-2 text-sm text-muted">No exit logic recorded yet.</p>;
+  if (items.length === 0)
+    return (
+      <p className="py-2 text-sm text-muted">No exit logic recorded yet.</p>
+    );
   return (
     <div className="space-y-2">
       {items.map((i) => (
-        <div key={i.label} className="flex items-center justify-between rounded-lg bg-surface-2 px-3 py-2 text-sm">
+        <div
+          key={i.label}
+          className="flex items-center justify-between rounded-lg bg-surface-2 px-3 py-2 text-sm"
+        >
           <span className="text-muted">{i.label}</span>
-          <span className="font-medium tabular-nums" style={{ color: i.pnl >= 0 ? "var(--profit)" : "var(--loss)" }}>
+          <span
+            className="font-medium tabular-nums"
+            style={{ color: i.pnl >= 0 ? "var(--profit)" : "var(--loss)" }}
+          >
             {formatSignedCurrency(i.pnl)} · {i.count}
           </span>
         </div>

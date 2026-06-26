@@ -7,8 +7,10 @@ A private, full-stack trading journal SaaS built with **Next.js 16** (App Router
 - **Single-user sign-in** via JWT session cookies (`jose`).
 - **Account management** with starting balances and computed running balances.
 - **Rich journal entries** for each trade: pair, direction, open/close dates, entry/exit/stop-loss/take-profit, size, risk amount, ROI, R:R, exit logic, setup, comment, and chart URL.
-- **Calendar + day panel** for quick visual trade history.
-- **Stats, equity curve, and analytics** (win rate, profit factor, expectancy, streaks, top setups, exit logic breakdown).
+- **Three-page navigation** — Dashboard, Trades, and Analytics.
+- **Trades page** with search, filters, sorting, and pagination.
+- **Analytics page** with stats, calendar, day panel, and full performance breakdown (win rate, profit factor, expectancy, streaks, top setups, exit logic breakdown).
+- **Stats + equity curve** on the main dashboard.
 - **Open positions list** for trades that haven't been closed yet.
 - **Fast trade input** with a keyboard-friendly modal and preset exit logic chips.
 
@@ -55,13 +57,7 @@ Make sure a Postgres database is running and `DATABASE_URL` points to it.
 npx prisma migrate dev
 ```
 
-### 4. Seed sample data
-
-```bash
-npm run db:seed
-```
-
-### 5. Run the dev server
+### 4. Run the dev server
 
 ```bash
 npm run dev
@@ -71,39 +67,43 @@ Open `http://localhost:3000` and sign in with the `AUTH_EMAIL` / `AUTH_PASSWORD`
 
 ## Useful commands
 
-| Command                  | Description                   |
-| ------------------------ | ----------------------------- |
-| `npm run dev`            | Start the dev server          |
-| `npm run build`          | Build for production          |
-| `npm run start`          | Start the production server   |
-| `npm run db:seed`        | Seed sample accounts + trades |
-| `npx prisma migrate dev` | Create/run migrations         |
-| `npx prisma studio`      | Open the database UI          |
+| Command                  | Description                 |
+| ------------------------ | --------------------------- |
+| `npm run dev`            | Start the dev server        |
+| `npm run build`          | Build for production        |
+| `npm run start`          | Start the production server |
+| `npx prisma migrate dev` | Create/run migrations       |
+| `npx prisma studio`      | Open the database UI        |
 
 ## Project structure
 
 ```
 prisma/
   schema.prisma       # Account + Trade models
-  seed.mjs            # Sample data
 src/
   app/
+    (dashboard)/
+      layout.tsx      # Shared app shell (sidebar, modals)
+      page.tsx        # Dashboard overview
+      journal/page.tsx # Trades list with filters + pagination
+      analytics/page.tsx # Calendar + stats + analytics
     login/page.tsx    # Sign-in UI
     api/              # Accounts, trades, auth routes
-    page.tsx          # Dashboard entry
     proxy.ts          # Auth route guard
   components/
-    Dashboard.tsx
+    AppLayout.tsx
+    AccountContext.tsx
+    ModalContext.tsx
+    Sidebar.tsx
     TradeModal.tsx
-    Calendar.tsx
-    JournalTable.tsx
-    OpenPositions.tsx
+    AccountModal.tsx
     StatCards.tsx
     EquityCurve.tsx
     Analytics.tsx
-    Sidebar.tsx
-    AccountModal.tsx
+    Calendar.tsx
     DayPanel.tsx
+    JournalTable.tsx
+    OpenPositions.tsx
   lib/
     auth.ts           # JWT helpers
     serverAuth.ts     # Server session check
@@ -138,6 +138,16 @@ This ensures the Prisma client is generated and migrations are applied before ea
 3. Hit **Deploy**.
 
 After the first deploy, visit the site and sign in with the authorized credentials.
+
+## Deploy summary
+
+- **Pages:** `/` Dashboard, `/journal` Trades, `/analytics` Analytics.
+- **Navigation:** sidebar uses Next.js `Link` with active-route highlighting.
+- **Responsive:** tables scroll horizontally on mobile, modals are bottom-sheet on mobile and scrollable.
+- **Filters:** Trades page supports account, search, direction, status, setup, and date range. Analytics page supports account, direction, and date range.
+- **Pagination:** Trades page paginates 10 rows per page.
+- **Seed files removed:** The repo no longer contains `prisma/seed.mjs` or `prisma/seed-goat.mjs`. On production, the database will be empty after the first deploy unless you migrate your local data. You can add trades manually through the web UI or import a SQL dump.
+- **Build command:** `prisma generate && prisma migrate deploy && next build` (already set in `package.json` for Vercel).
 
 ## Notes
 

@@ -210,7 +210,7 @@ export function tradesWithRunningBalance(
 export function formatR(rr: number | null | undefined): string {
   if (rr === null || rr === undefined) return "—";
   const sign = rr > 0 ? "+" : "";
-  return `${sign}${Number.isInteger(rr) ? rr : rr.toFixed(1)}R`;
+  return `${sign}${Number.isInteger(rr) ? rr : rr.toFixed(2)}R`;
 }
 
 /** Format a signed percentage, e.g. +2% / -1%. */
