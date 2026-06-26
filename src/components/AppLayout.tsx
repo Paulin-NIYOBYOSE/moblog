@@ -14,15 +14,18 @@ export default function AppLayout({
   onAddTrade,
   onAddAccount,
   onEditAccount,
+  onDeleteAccount,
 }: {
   children: React.ReactNode;
   onAddTrade: () => void;
   onAddAccount: () => void;
   onEditAccount: (account: Account) => void;
+  onDeleteAccount: (account: Account) => void;
 }) {
   const router = useRouter();
   const { accounts } = useData();
-  const { selectedAccount, setSelectedAccountId } = useSelectedAccount(accounts);
+  const { selectedAccount, setSelectedAccountId } =
+    useSelectedAccount(accounts);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   async function handleLogout() {
@@ -49,6 +52,10 @@ export default function AppLayout({
           onEditAccount(a);
           setMobileMenuOpen(false);
         }}
+        onDeleteAccount={(a) => {
+          onDeleteAccount(a);
+          setMobileMenuOpen(false);
+        }}
         onLogout={handleLogout}
         mobileOpen={mobileMenuOpen}
         onCloseMobile={() => setMobileMenuOpen(false)}
@@ -63,7 +70,11 @@ export default function AppLayout({
               onClick={() => setMobileMenuOpen((s) => !s)}
               className="flex h-8 w-8 items-center justify-center rounded-lg text-foreground hover:bg-surface-2"
             >
-              {mobileMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+              {mobileMenuOpen ? (
+                <X className="h-5 w-5" />
+              ) : (
+                <Menu className="h-5 w-5" />
+              )}
             </button>
             <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent text-accent-foreground">
               <LineChart className="h-4.5 w-4.5" strokeWidth={2.5} />

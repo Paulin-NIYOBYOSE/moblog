@@ -49,7 +49,7 @@ export default function Sidebar({
   onCloseMobile?: () => void;
 }) {
   const pathname = usePathname();
-  const [showAccounts, setShowAccounts] = useState(false);
+  const [showAccounts, setShowAccounts] = useState(true);
 
   return (
     <>

@@ -43,6 +43,17 @@ export default function DashboardLayout({
     }
   }
 
+  async function handleDeleteAccount(account: Account) {
+    if (
+      !window.confirm(
+        `Delete "${account.name}" and all its trades? This cannot be undone.`,
+      )
+    ) {
+      return;
+    }
+    await deleteAccount(account.id);
+  }
+
   return (
     <AccountProvider>
       <ModalProvider
@@ -60,6 +71,7 @@ export default function DashboardLayout({
           }
           onAddAccount={openAddAccount}
           onEditAccount={openEditAccount}
+          onDeleteAccount={handleDeleteAccount}
         >
           {children}
         </AppLayout>

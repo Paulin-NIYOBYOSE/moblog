@@ -153,4 +153,6 @@ After the first deploy, visit the site and sign in with the authorized credentia
 
 - `AUTH_PASSWORD` is plain text for simplicity because the app is single-user. Change it in your environment whenever you want to rotate the password.
 - The `proxy.ts` route guard protects the whole app except `/login` and `/api/auth/*`.
+- **Manage accounts:** in the sidebar, expand the **Accounts** section. Each account has a pencil (edit) and trash (delete) icon. Delete cascades and removes all trades for that account.
+- **Manage trades:** click any trade in the Trades page or Journal table to edit; the trade modal has a **Delete** button.
 - Open trades are trades with no `closeDate`; they appear in the **Open positions** list and do not affect balance/stats.
