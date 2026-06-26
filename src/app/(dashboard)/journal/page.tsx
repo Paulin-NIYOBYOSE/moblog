@@ -6,12 +6,14 @@ import { useData } from "@/lib/useData";
 import { useSelectedAccount } from "@/components/AccountContext";
 import { useModal } from "@/components/ModalContext";
 import JournalTable from "@/components/JournalTable";
+import CustomSelect from "@/components/CustomSelect";
 import { cn, isClosed } from "@/lib/utils";
 import type { Trade } from "@/lib/types";
 
 export default function JournalPage() {
   const { accounts, trades, loading, error } = useData();
-  const { selectedAccount, setSelectedAccountId } = useSelectedAccount(accounts);
+  const { selectedAccount, setSelectedAccountId } =
+    useSelectedAccount(accounts);
   const { openEdit, openAdd } = useModal();
 
   const [search, setSearch] = useState("");
@@ -31,7 +33,9 @@ export default function JournalPage() {
   }, [trades]);
 
   const filteredTrades = useMemo(() => {
-    let list: Trade[] = selectedAccount ? trades.filter((t) => t.accountId === selectedAccount.id) : trades;
+    let list: Trade[] = selectedAccount
+      ? trades.filter((t) => t.accountId === selectedAccount.id)
+      : trades;
 
     if (search.trim()) {
       const q = search.toLowerCase();
@@ -43,7 +47,8 @@ export default function JournalPage() {
           (t.exitLogic?.toLowerCase() || "").includes(q),
       );
     }
-    if (direction !== "ALL") list = list.filter((t) => t.direction === direction);
+    if (direction !== "ALL")
+      list = list.filter((t) => t.direction === direction);
     if (status === "OPEN") list = list.filter((t) => !isClosed(t));
     if (status === "CLOSED") list = list.filter((t) => isClosed(t));
     if (setup) list = list.filter((t) => t.setup === setup);
@@ -51,10 +56,22 @@ export default function JournalPage() {
     if (dateTo) list = list.filter((t) => t.openDate <= dateTo);
 
     return list.sort((a, b) => b.openDate.localeCompare(a.openDate));
-  }, [trades, selectedAccount, search, direction, status, setup, dateFrom, dateTo]);
+  }, [
+    trades,
+    selectedAccount,
+    search,
+    direction,
+    status,
+    setup,
+    dateFrom,
+    dateTo,
+  ]);
 
   const totalPages = Math.max(1, Math.ceil(filteredTrades.length / PAGE_SIZE));
-  const pagedTrades = filteredTrades.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const pagedTrades = filteredTrades.slice(
+    (page - 1) * PAGE_SIZE,
+    page * PAGE_SIZE,
+  );
 
   return (
     <div>
@@ -102,26 +119,27 @@ export default function JournalPage() {
             )}
           </div>
 
-          <select
+          <CustomSelect
             value={selectedAccount?.id || ""}
-            onChange={(e) => {
-              setSelectedAccountId(e.target.value || null);
+            onChange={(v) => {
+              setSelectedAccountId(v || null);
               setPage(1);
             }}
-            className="input w-40"
-          >
-            <option value="">All accounts</option>
-            {accounts.map((a) => (
-              <option key={a.id} value={a.id}>{a.name}</option>
-            ))}
-          </select>
+            options={[
+              { value: "", label: "All accounts" },
+              ...accounts.map((a) => ({ value: a.id, label: a.name })),
+            ]}
+            className="w-40"
+          />
 
           <button
             type="button"
             onClick={() => setShowFilters((s) => !s)}
             className={cn(
               "inline-flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm font-medium transition-colors",
-              showFilters ? "bg-surface-2 text-foreground" : "text-muted hover:bg-surface-2 hover:text-foreground",
+              showFilters
+                ? "bg-surface-2 text-foreground"
+                : "text-muted hover:bg-surface-2 hover:text-foreground",
             )}
           >
             <SlidersHorizontal className="h-4 w-4" /> Filters
@@ -130,25 +148,62 @@ export default function JournalPage() {
 
         {showFilters && (
           <div className="mt-3 grid grid-cols-1 gap-3 border-t border-border pt-3 sm:grid-cols-2 lg:grid-cols-4">
-            <select value={direction} onChange={(e) => { setDirection(e.target.value as any); setPage(1); }} className="input">
-              <option value="ALL">All directions</option>
-              <option value="LONG">Long only</option>
-              <option value="SHORT">Short only</option>
-            </select>
-            <select value={status} onChange={(e) => { setStatus(e.target.value as any); setPage(1); }} className="input">
-              <option value="ALL">All statuses</option>
-              <option value="OPEN">Open</option>
-              <option value="CLOSED">Closed</option>
-            </select>
-            <select value={setup} onChange={(e) => { setSetup(e.target.value); setPage(1); }} className="input">
-              <option value="">All setups</option>
-              {setups.map((s) => (
-                <option key={s} value={s}>{s}</option>
-              ))}
-            </select>
+            <CustomSelect
+              value={direction}
+              onChange={(v) => {
+                setDirection(v as any);
+                setPage(1);
+              }}
+              options={[
+                { value: "ALL", label: "All directions" },
+                { value: "LONG", label: "Long only" },
+                { value: "SHORT", label: "Short only" },
+              ]}
+            />
+            <CustomSelect
+              value={status}
+              onChange={(v) => {
+                setStatus(v as any);
+                setPage(1);
+              }}
+              options={[
+                { value: "ALL", label: "All statuses" },
+                { value: "OPEN", label: "Open" },
+                { value: "CLOSED", label: "Closed" },
+              ]}
+            />
+            <CustomSelect
+              value={setup}
+              onChange={(v) => {
+                setSetup(v);
+                setPage(1);
+              }}
+              options={[
+                { value: "", label: "All setups" },
+                ...setups.map((s) => ({ value: s, label: s })),
+              ]}
+            />
             <div className="flex gap-2">
-              <input type="date" value={dateFrom} onChange={(e) => { setDateFrom(e.target.value); setPage(1); }} className="input" placeholder="From" />
-              <input type="date" value={dateTo} onChange={(e) => { setDateTo(e.target.value); setPage(1); }} className="input" placeholder="To" />
+              <input
+                type="date"
+                value={dateFrom}
+                onChange={(e) => {
+                  setDateFrom(e.target.value);
+                  setPage(1);
+                }}
+                className="input"
+                placeholder="From"
+              />
+              <input
+                type="date"
+                value={dateTo}
+                onChange={(e) => {
+                  setDateTo(e.target.value);
+                  setPage(1);
+                }}
+                className="input"
+                placeholder="To"
+              />
             </div>
           </div>
         )}
@@ -179,7 +234,9 @@ export default function JournalPage() {
                 >
                   Previous
                 </button>
-                <span className="tabular-nums">{page} / {totalPages}</span>
+                <span className="tabular-nums">
+                  {page} / {totalPages}
+                </span>
                 <button
                   type="button"
                   disabled={page === totalPages}

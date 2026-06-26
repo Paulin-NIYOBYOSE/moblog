@@ -9,6 +9,7 @@ import {
   LayoutDashboard,
   LineChart,
   ListOrdered,
+  Loader2,
   LogOut,
   Pencil,
   Plus,
@@ -33,6 +34,7 @@ export default function Sidebar({
   onAddAccount,
   onEditAccount,
   onDeleteAccount,
+  deletingAccountId,
   onLogout,
   mobileOpen,
   onCloseMobile,
@@ -44,6 +46,7 @@ export default function Sidebar({
   onAddAccount: () => void;
   onEditAccount: (account: Account) => void;
   onDeleteAccount: (account: Account) => void;
+  deletingAccountId?: string | null;
   onLogout: () => void;
   mobileOpen?: boolean;
   onCloseMobile?: () => void;
@@ -138,7 +141,7 @@ export default function Sidebar({
                 <div
                   key={a.id}
                   className={cn(
-                    "group flex items-center justify-between rounded-lg px-3 py-2 text-sm transition-colors",
+                    "group flex items-center gap-2 rounded-lg px-3 py-2 text-sm transition-colors",
                     selectedAccount?.id === a.id
                       ? "bg-surface-2 text-foreground"
                       : "text-muted hover:bg-surface-2 hover:text-foreground",
@@ -147,16 +150,16 @@ export default function Sidebar({
                   <button
                     type="button"
                     onClick={() => onSelectAccount(a)}
-                    className="flex flex-1 items-center justify-between gap-2 text-left"
+                    className="flex min-w-0 flex-1 items-center justify-between gap-2 text-left"
                   >
                     <span className="truncate">{a.name}</span>
-                    <span className="text-xs tabular-nums text-muted">
+                    <span className="shrink-0 text-xs tabular-nums text-muted">
                       {formatCurrency(a.balance ?? a.startingBalance, {
                         compact: true,
                       })}
                     </span>
                   </button>
-                  <div className="ml-2 flex items-center gap-0.5">
+                  <div className="flex shrink-0 items-center gap-0.5">
                     <button
                       type="button"
                       onClick={() => onEditAccount(a)}
@@ -168,10 +171,15 @@ export default function Sidebar({
                     <button
                       type="button"
                       onClick={() => onDeleteAccount(a)}
-                      className="rounded-md p-1.5 text-muted transition-colors hover:bg-loss-soft hover:text-loss"
+                      disabled={deletingAccountId === a.id}
+                      className="rounded-md p-1.5 text-muted transition-colors hover:bg-loss-soft hover:text-loss disabled:opacity-60"
                       title="Delete account"
                     >
-                      <Trash2 className="h-3.5 w-3.5" />
+                      {deletingAccountId === a.id ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <Trash2 className="h-3.5 w-3.5" />
+                      )}
                     </button>
                   </div>
                 </div>

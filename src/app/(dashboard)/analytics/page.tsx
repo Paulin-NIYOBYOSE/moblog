@@ -4,6 +4,7 @@ import { Suspense, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { AlertTriangle, CalendarDays, SlidersHorizontal } from "lucide-react";
 import { useData } from "@/lib/useData";
+import CustomSelect from "@/components/CustomSelect";
 import { useSelectedAccount } from "@/components/AccountContext";
 import { useModal } from "@/components/ModalContext";
 import Analytics from "@/components/Analytics";
@@ -33,7 +34,8 @@ function AnalyticsLoading() {
 
 function AnalyticsPageInner() {
   const { accounts, trades, loading, error } = useData();
-  const { selectedAccount, setSelectedAccountId } = useSelectedAccount(accounts);
+  const { selectedAccount, setSelectedAccountId } =
+    useSelectedAccount(accounts);
   const { openEdit, openAdd } = useModal();
   const searchParams = useSearchParams();
 
@@ -105,18 +107,15 @@ function AnalyticsPageInner() {
       {/* Filters */}
       <div className="mb-4 rounded-2xl border border-border bg-card p-4">
         <div className="flex flex-wrap items-center gap-3">
-          <select
+          <CustomSelect
             value={selectedAccount?.id || ""}
-            onChange={(e) => setSelectedAccountId(e.target.value || null)}
-            className="input w-48"
-          >
-            <option value="">All accounts</option>
-            {accounts.map((a) => (
-              <option key={a.id} value={a.id}>
-                {a.name}
-              </option>
-            ))}
-          </select>
+            onChange={(v) => setSelectedAccountId(v || null)}
+            options={[
+              { value: "", label: "All accounts" },
+              ...accounts.map((a) => ({ value: a.id, label: a.name })),
+            ]}
+            className="w-48"
+          />
           <button
             type="button"
             onClick={() => setShowFilters((s) => !s)}
@@ -133,15 +132,15 @@ function AnalyticsPageInner() {
 
         {showFilters && (
           <div className="mt-3 grid grid-cols-1 gap-3 border-t border-border pt-3 sm:grid-cols-3">
-            <select
+            <CustomSelect
               value={direction}
-              onChange={(e) => setDirection(e.target.value as any)}
-              className="input"
-            >
-              <option value="ALL">All directions</option>
-              <option value="LONG">Long only</option>
-              <option value="SHORT">Short only</option>
-            </select>
+              onChange={(v) => setDirection(v as any)}
+              options={[
+                { value: "ALL", label: "All directions" },
+                { value: "LONG", label: "Long only" },
+                { value: "SHORT", label: "Short only" },
+              ]}
+            />
             <input
               type="date"
               value={dateFrom}

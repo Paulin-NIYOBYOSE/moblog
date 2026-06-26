@@ -11,6 +11,8 @@ import {
 } from "lucide-react";
 import type { Account, Direction, Trade, TradeInput } from "@/lib/types";
 import { cn, todayKey } from "@/lib/utils";
+import CustomSelect from "./CustomSelect";
+import { useConfirm } from "./ConfirmContext";
 
 interface TradeModalProps {
   open: boolean;
@@ -72,12 +74,9 @@ export default function TradeModal({
   const [error, setError] = useState<string | null>(null);
   const pairRef = useRef<HTMLInputElement>(null);
   const isEdit = Boolean(trade);
+  const confirm = useConfirm();
 
-  const accountId =
-    form.accountId ||
-    defaultAccountId ||
-    accounts[0]?.id ||
-    "";
+  const accountId = form.accountId || defaultAccountId || accounts[0]?.id || "";
 
   useEffect(() => {
     if (!open) return;
@@ -130,7 +129,9 @@ export default function TradeModal({
   }
 
   function toNumOrNull(value: string): number | null {
-    return value === "" || value === null || value === undefined ? null : Number(value);
+    return value === "" || value === null || value === undefined
+      ? null
+      : Number(value);
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -184,6 +185,14 @@ export default function TradeModal({
 
   async function handleDelete() {
     if (!trade || !onDelete) return;
+    const confirmed = await confirm({
+      title: "Delete trade",
+      message: `Delete this ${trade.pair} ${trade.direction.toLowerCase()} trade? This cannot be undone.`,
+      confirmText: "Delete",
+      cancelText: "Cancel",
+      destructive: true,
+    });
+    if (!confirmed) return;
     setDeleting(true);
     try {
       await onDelete(trade.id);
@@ -196,10 +205,15 @@ export default function TradeModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center">
-      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm animate-fade-in" onClick={onClose} />
+      <div
+        className="absolute inset-0 bg-black/50 backdrop-blur-sm animate-fade-in"
+        onClick={onClose}
+      />
       <div className="relative z-10 flex h-[90vh] w-full max-w-2xl flex-col animate-pop-in rounded-t-2xl border border-border bg-card shadow-2xl sm:h-auto sm:rounded-2xl">
         <div className="flex items-center justify-between border-b border-border px-5 py-4">
-          <h2 className="text-base font-semibold">{isEdit ? "Edit trade" : "Add trade"}</h2>
+          <h2 className="text-base font-semibold">
+            {isEdit ? "Edit trade" : "Add trade"}
+          </h2>
           <button
             type="button"
             onClick={onClose}
@@ -209,52 +223,110 @@ export default function TradeModal({
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto px-5 py-4">
+        <form
+          onSubmit={handleSubmit}
+          className="flex-1 overflow-y-auto px-5 py-4"
+        >
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             {/* Account */}
-            <label className="block sm:col-span-2">
-              <span className="mb-1.5 block text-xs font-medium text-muted">Account</span>
-              <select value={accountId} onChange={(e) => set("accountId", e.target.value)} className="input">
-                {accounts.map((a) => (
-                  <option key={a.id} value={a.id}>{a.name}</option>
-                ))}
-              </select>
-            </label>
+            <div className="sm:col-span-2">
+              <CustomSelect
+                label="Account"
+                value={accountId}
+                onChange={(v) => set("accountId", v)}
+                options={accounts.map((a) => ({ value: a.id, label: a.name }))}
+              />
+            </div>
 
             {/* Direction */}
             <div className="sm:col-span-2">
               <div className="grid grid-cols-2 gap-2">
-                <DirButton active={form.direction === "LONG"} tone="profit" icon={TrendingUp} label="Long" onClick={() => set("direction", "LONG")} />
-                <DirButton active={form.direction === "SHORT"} tone="loss" icon={TrendingDown} label="Short" onClick={() => set("direction", "SHORT")} />
+                <DirButton
+                  active={form.direction === "LONG"}
+                  tone="profit"
+                  icon={TrendingUp}
+                  label="Long"
+                  onClick={() => set("direction", "LONG")}
+                />
+                <DirButton
+                  active={form.direction === "SHORT"}
+                  tone="loss"
+                  icon={TrendingDown}
+                  label="Short"
+                  onClick={() => set("direction", "SHORT")}
+                />
               </div>
             </div>
 
             <label className="block">
-              <span className="mb-1.5 block text-xs font-medium text-muted">Pair</span>
-              <input ref={pairRef} value={form.pair} onChange={(e) => set("pair", e.target.value.toUpperCase())} className="input uppercase" placeholder="EUR/USD" autoComplete="off" />
+              <span className="mb-1.5 block text-xs font-medium text-muted">
+                Pair
+              </span>
+              <input
+                ref={pairRef}
+                value={form.pair}
+                onChange={(e) => set("pair", e.target.value.toUpperCase())}
+                className="input uppercase"
+                placeholder="EUR/USD"
+                autoComplete="off"
+              />
             </label>
 
             <label className="block">
-              <span className="mb-1.5 block text-xs font-medium text-muted">Open date</span>
-              <input type="date" value={form.openDate} onChange={(e) => set("openDate", e.target.value)} className="input" />
+              <span className="mb-1.5 block text-xs font-medium text-muted">
+                Open date
+              </span>
+              <input
+                type="date"
+                value={form.openDate}
+                onChange={(e) => set("openDate", e.target.value)}
+                className="input"
+              />
             </label>
 
             <label className="block">
-              <span className="mb-1.5 block text-xs font-medium text-muted">Net P&L</span>
-              <input type="number" step="any" inputMode="decimal" value={form.pnl} onChange={(e) => set("pnl", e.target.value)} className="input font-semibold" placeholder="250 or -120" />
+              <span className="mb-1.5 block text-xs font-medium text-muted">
+                Net P&L
+              </span>
+              <input
+                type="number"
+                step="any"
+                inputMode="decimal"
+                value={form.pnl}
+                onChange={(e) => set("pnl", e.target.value)}
+                className="input font-semibold"
+                placeholder="250 or -120"
+              />
             </label>
 
             <label className="block">
-              <span className="mb-1.5 block text-xs font-medium text-muted">Close date</span>
-              <input type="date" value={form.closeDate} onChange={(e) => set("closeDate", e.target.value)} className="input" />
-              <p className="mt-1 text-[11px] text-muted">Leave blank to keep the trade open.</p>
+              <span className="mb-1.5 block text-xs font-medium text-muted">
+                Close date
+              </span>
+              <input
+                type="date"
+                value={form.closeDate}
+                onChange={(e) => set("closeDate", e.target.value)}
+                className="input"
+              />
+              <p className="mt-1 text-[11px] text-muted">
+                Leave blank to keep the trade open.
+              </p>
             </label>
 
             {/* Exit logic + chips */}
             <div className="sm:col-span-2">
               <label className="block">
-                <span className="mb-1.5 block text-xs font-medium text-muted">Exit logic</span>
-                <input value={form.exitLogic} onChange={(e) => set("exitLogic", e.target.value)} className="input" placeholder="How or why you exited" autoComplete="off" />
+                <span className="mb-1.5 block text-xs font-medium text-muted">
+                  Exit logic
+                </span>
+                <input
+                  value={form.exitLogic}
+                  onChange={(e) => set("exitLogic", e.target.value)}
+                  className="input"
+                  placeholder="How or why you exited"
+                  autoComplete="off"
+                />
               </label>
               <div className="mt-2 flex flex-wrap gap-1.5">
                 {EXIT_LOGIC_PRESETS.map((preset) => (
@@ -277,60 +349,162 @@ export default function TradeModal({
             className="mt-4 flex w-full items-center justify-between rounded-lg px-1 py-1 text-sm text-muted transition-colors hover:text-foreground"
           >
             <span>More details (optional)</span>
-            <ChevronDown className={cn("h-4 w-4 transition-transform", showMore && "rotate-180")} />
+            <ChevronDown
+              className={cn(
+                "h-4 w-4 transition-transform",
+                showMore && "rotate-180",
+              )}
+            />
           </button>
 
           {showMore && (
             <div className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2 animate-fade-in">
               <label className="block">
-                <span className="mb-1.5 block text-xs font-medium text-muted">ROI %</span>
-                <input type="number" step="any" value={form.roi} onChange={(e) => set("roi", e.target.value)} className="input" placeholder="2.0" />
+                <span className="mb-1.5 block text-xs font-medium text-muted">
+                  ROI %
+                </span>
+                <input
+                  type="number"
+                  step="any"
+                  value={form.roi}
+                  onChange={(e) => set("roi", e.target.value)}
+                  className="input"
+                  placeholder="2.0"
+                />
               </label>
               <label className="block">
-                <span className="mb-1.5 block text-xs font-medium text-muted">R:R</span>
-                <input type="number" step="any" value={form.rr} onChange={(e) => set("rr", e.target.value)} className="input" placeholder="2 or -1" />
+                <span className="mb-1.5 block text-xs font-medium text-muted">
+                  R:R
+                </span>
+                <input
+                  type="number"
+                  step="any"
+                  value={form.rr}
+                  onChange={(e) => set("rr", e.target.value)}
+                  className="input"
+                  placeholder="2 or -1"
+                />
               </label>
               <label className="block">
-                <span className="mb-1.5 block text-xs font-medium text-muted">Entry</span>
-                <input type="number" step="any" value={form.entry} onChange={(e) => set("entry", e.target.value)} className="input" placeholder="0.00" />
+                <span className="mb-1.5 block text-xs font-medium text-muted">
+                  Entry
+                </span>
+                <input
+                  type="number"
+                  step="any"
+                  value={form.entry}
+                  onChange={(e) => set("entry", e.target.value)}
+                  className="input"
+                  placeholder="0.00"
+                />
               </label>
               <label className="block">
-                <span className="mb-1.5 block text-xs font-medium text-muted">Exit</span>
-                <input type="number" step="any" value={form.exit} onChange={(e) => set("exit", e.target.value)} className="input" placeholder="0.00" />
+                <span className="mb-1.5 block text-xs font-medium text-muted">
+                  Exit
+                </span>
+                <input
+                  type="number"
+                  step="any"
+                  value={form.exit}
+                  onChange={(e) => set("exit", e.target.value)}
+                  className="input"
+                  placeholder="0.00"
+                />
               </label>
               <label className="block">
-                <span className="mb-1.5 block text-xs font-medium text-muted">Stop loss</span>
-                <input type="number" step="any" value={form.stopLoss} onChange={(e) => set("stopLoss", e.target.value)} className="input" placeholder="0.00" />
+                <span className="mb-1.5 block text-xs font-medium text-muted">
+                  Stop loss
+                </span>
+                <input
+                  type="number"
+                  step="any"
+                  value={form.stopLoss}
+                  onChange={(e) => set("stopLoss", e.target.value)}
+                  className="input"
+                  placeholder="0.00"
+                />
               </label>
               <label className="block">
-                <span className="mb-1.5 block text-xs font-medium text-muted">Take profit</span>
-                <input type="number" step="any" value={form.takeProfit} onChange={(e) => set("takeProfit", e.target.value)} className="input" placeholder="0.00" />
+                <span className="mb-1.5 block text-xs font-medium text-muted">
+                  Take profit
+                </span>
+                <input
+                  type="number"
+                  step="any"
+                  value={form.takeProfit}
+                  onChange={(e) => set("takeProfit", e.target.value)}
+                  className="input"
+                  placeholder="0.00"
+                />
               </label>
               <label className="block">
-                <span className="mb-1.5 block text-xs font-medium text-muted">Size / lots</span>
-                <input type="number" step="any" value={form.size} onChange={(e) => set("size", e.target.value)} className="input" placeholder="0.00" />
+                <span className="mb-1.5 block text-xs font-medium text-muted">
+                  Size / lots
+                </span>
+                <input
+                  type="number"
+                  step="any"
+                  value={form.size}
+                  onChange={(e) => set("size", e.target.value)}
+                  className="input"
+                  placeholder="0.00"
+                />
               </label>
               <label className="block">
-                <span className="mb-1.5 block text-xs font-medium text-muted">Risk amount</span>
-                <input type="number" step="any" value={form.riskAmount} onChange={(e) => set("riskAmount", e.target.value)} className="input" placeholder="0.00" />
+                <span className="mb-1.5 block text-xs font-medium text-muted">
+                  Risk amount
+                </span>
+                <input
+                  type="number"
+                  step="any"
+                  value={form.riskAmount}
+                  onChange={(e) => set("riskAmount", e.target.value)}
+                  className="input"
+                  placeholder="0.00"
+                />
               </label>
               <label className="block sm:col-span-2">
-                <span className="mb-1.5 block text-xs font-medium text-muted">Setup / strategy</span>
-                <input value={form.setup} onChange={(e) => set("setup", e.target.value)} className="input" placeholder="Breakout, Reversal..." autoComplete="off" />
+                <span className="mb-1.5 block text-xs font-medium text-muted">
+                  Setup / strategy
+                </span>
+                <input
+                  value={form.setup}
+                  onChange={(e) => set("setup", e.target.value)}
+                  className="input"
+                  placeholder="Breakout, Reversal..."
+                  autoComplete="off"
+                />
               </label>
               <label className="block sm:col-span-2">
-                <span className="mb-1.5 block text-xs font-medium text-muted">Chart link</span>
-                <input type="url" value={form.chartUrl} onChange={(e) => set("chartUrl", e.target.value)} className="input" placeholder="https://www.tradingview.com/..." />
+                <span className="mb-1.5 block text-xs font-medium text-muted">
+                  Chart link
+                </span>
+                <input
+                  type="url"
+                  value={form.chartUrl}
+                  onChange={(e) => set("chartUrl", e.target.value)}
+                  className="input"
+                  placeholder="https://www.tradingview.com/..."
+                />
               </label>
               <label className="block sm:col-span-2">
-                <span className="mb-1.5 block text-xs font-medium text-muted">Comment</span>
-                <textarea value={form.comment} onChange={(e) => set("comment", e.target.value)} className="input min-h-[72px] resize-none" placeholder="What was your thesis? How did you execute?" />
+                <span className="mb-1.5 block text-xs font-medium text-muted">
+                  Comment
+                </span>
+                <textarea
+                  value={form.comment}
+                  onChange={(e) => set("comment", e.target.value)}
+                  className="input min-h-[72px] resize-none"
+                  placeholder="What was your thesis? How did you execute?"
+                />
               </label>
             </div>
           )}
 
           {error && (
-            <p className="mt-3 rounded-lg bg-loss-soft px-3 py-2 text-sm text-loss">{error}</p>
+            <p className="mt-3 rounded-lg bg-loss-soft px-3 py-2 text-sm text-loss">
+              {error}
+            </p>
           )}
 
           <div className="mt-5 flex items-center gap-2">
@@ -342,7 +516,11 @@ export default function TradeModal({
                 className="flex h-10 w-10 items-center justify-center rounded-lg border border-border text-loss transition-colors hover:bg-loss-soft disabled:opacity-50"
                 aria-label="Delete trade"
               >
-                {deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                {deleting ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Trash2 className="h-4 w-4" />
+                )}
               </button>
             )}
             <button
@@ -386,12 +564,15 @@ function DirButton({
       onClick={onClick}
       className={cn(
         "flex items-center justify-center gap-2 rounded-lg border py-2.5 text-sm font-medium transition-all",
-        active ? "border-transparent" : "border-border text-muted hover:text-foreground",
+        active
+          ? "border-transparent"
+          : "border-border text-muted hover:text-foreground",
       )}
       style={
         active
           ? {
-              backgroundColor: tone === "profit" ? "var(--profit-soft)" : "var(--loss-soft)",
+              backgroundColor:
+                tone === "profit" ? "var(--profit-soft)" : "var(--loss-soft)",
               color: tone === "profit" ? "var(--profit)" : "var(--loss)",
               boxShadow: `inset 0 0 0 1px ${tone === "profit" ? "var(--profit)" : "var(--loss)"}`,
             }

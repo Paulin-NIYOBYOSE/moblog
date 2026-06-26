@@ -15,12 +15,14 @@ export default function AppLayout({
   onAddAccount,
   onEditAccount,
   onDeleteAccount,
+  deletingAccountId,
 }: {
   children: React.ReactNode;
   onAddTrade: () => void;
   onAddAccount: () => void;
   onEditAccount: (account: Account) => void;
   onDeleteAccount: (account: Account) => void;
+  deletingAccountId?: string | null;
 }) {
   const router = useRouter();
   const { accounts } = useData();
@@ -56,6 +58,7 @@ export default function AppLayout({
           onDeleteAccount(a);
           setMobileMenuOpen(false);
         }}
+        deletingAccountId={deletingAccountId}
         onLogout={handleLogout}
         mobileOpen={mobileMenuOpen}
         onCloseMobile={() => setMobileMenuOpen(false)}
