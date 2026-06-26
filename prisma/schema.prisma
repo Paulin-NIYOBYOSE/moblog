@@ -1,0 +1,69 @@
+// Moblog – Prisma schema
+// Docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Direction {
+  LONG
+  SHORT
+}
+
+// A trading account (e.g. a prop-firm challenge, live broker, demo).
+model Account {
+  id              String   @id @default(cuid())
+  name            String
+  currency        String   @default("USD")
+  startingBalance Float    @default(0)
+  isArchived      Boolean  @default(false)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  trades Trade[]
+
+  @@index([isArchived])
+}
+
+model Trade {
+  id        String  @id @default(cuid())
+  account   Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  accountId String
+
+  // Dates: a trade is OPEN until it has a closeDate.
+  openDate  DateTime
+  closeDate DateTime?
+
+  pair      String // e.g. "EUR/USD", "BTCUSD", "AAPL"
+  direction Direction @default(LONG)
+  exitLogic String? // e.g. "Full TP", "Close after confirmation", "Stop loss"
+
+  // Results
+  pnl Float  @default(0) // net P&L in account currency
+  roi Float? // return on investment, percent
+  rr  Float? // realized risk/reward as an R multiple (e.g. 2 = +2R)
+
+  // Execution / analysis
+  entry      Float?
+  exit       Float?
+  stopLoss   Float?
+  takeProfit Float?
+  size       Float? // position size / lots / shares
+  riskAmount Float? // $ risked on the trade
+
+  // Journaling
+  setup    String? // strategy / setup tag
+  comment  String?
+  chartUrl String? // link to a TradingView (or other) chart
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([accountId, openDate])
+  @@index([accountId, closeDate])
+}

@@ -1,36 +1,146 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Moblog
 
-## Getting Started
+A private, full-stack trading journal SaaS built with **Next.js 16** (App Router), **Prisma**, **PostgreSQL**, and **Tailwind CSS v4**. It features a calendar-based trade view, performance analytics, account management with running balances, and a minimal, Tradezella-inspired UI.
 
-First, run the development server:
+## Features
+
+- **Single-user sign-in** via JWT session cookies (`jose`).
+- **Account management** with starting balances and computed running balances.
+- **Rich journal entries** for each trade: pair, direction, open/close dates, entry/exit/stop-loss/take-profit, size, risk amount, ROI, R:R, exit logic, setup, comment, and chart URL.
+- **Calendar + day panel** for quick visual trade history.
+- **Stats, equity curve, and analytics** (win rate, profit factor, expectancy, streaks, top setups, exit logic breakdown).
+- **Open positions list** for trades that haven't been closed yet.
+- **Fast trade input** with a keyboard-friendly modal and preset exit logic chips.
+
+## Tech stack
+
+- **Next.js** 16.2.9 + **React** 19.2 + **Turbopack**
+- **Tailwind CSS** 4
+- **Prisma** 6.19.3 + **PostgreSQL**
+- **jose** for JWT session signing
+- **Lucide** icons
+
+## Environment setup
+
+Create a `.env` file at the project root (or copy `.env.example`):
+
+```env
+# PostgreSQL
+DATABASE_URL="postgresql://user:password@localhost:5432/moblog?schema=public"
+
+# Auth secrets (use strong, random values in production)
+AUTH_SECRET="Bv5eKu8jIXoW4F20xwNTl2NG7sc6H4_DP9pt-v2hETM"
+AUTH_EMAIL="me@moblog.app"
+AUTH_PASSWORD="changeme123"
+```
+
+- `AUTH_SECRET` — used to sign the session cookie. Change it to a long random string.
+- `AUTH_EMAIL` / `AUTH_PASSWORD` — the single authorized login.
+
+## Local development
+
+### 1. Install dependencies
+
+```bash
+npm install
+```
+
+### 2. Start PostgreSQL
+
+Make sure a Postgres database is running and `DATABASE_URL` points to it.
+
+### 3. Push the database schema
+
+```bash
+npx prisma migrate dev
+```
+
+### 4. Seed sample data
+
+```bash
+npm run db:seed
+```
+
+### 5. Run the dev server
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open `http://localhost:3000` and sign in with the `AUTH_EMAIL` / `AUTH_PASSWORD` you set.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Useful commands
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+| Command                  | Description                   |
+| ------------------------ | ----------------------------- |
+| `npm run dev`            | Start the dev server          |
+| `npm run build`          | Build for production          |
+| `npm run start`          | Start the production server   |
+| `npm run db:seed`        | Seed sample accounts + trades |
+| `npx prisma migrate dev` | Create/run migrations         |
+| `npx prisma studio`      | Open the database UI          |
 
-## Learn More
+## Project structure
 
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+```
+prisma/
+  schema.prisma       # Account + Trade models
+  seed.mjs            # Sample data
+src/
+  app/
+    login/page.tsx    # Sign-in UI
+    api/              # Accounts, trades, auth routes
+    page.tsx          # Dashboard entry
+    proxy.ts          # Auth route guard
+  components/
+    Dashboard.tsx
+    TradeModal.tsx
+    Calendar.tsx
+    JournalTable.tsx
+    OpenPositions.tsx
+    StatCards.tsx
+    EquityCurve.tsx
+    Analytics.tsx
+    Sidebar.tsx
+    AccountModal.tsx
+    DayPanel.tsx
+  lib/
+    auth.ts           # JWT helpers
+    serverAuth.ts     # Server session check
+    useData.ts        # Client data hooks
+    types.ts          # TypeScript types
+    utils.ts          # Stats/formatting helpers
+    prisma.ts         # Prisma client
+```
 
 ## Deploy on Vercel
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+### 1. Prepare your project
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- Push the repo to GitHub.
+- Make sure `DATABASE_URL` is set to a production Postgres connection string (e.g., [Neon](https://neon.tech) or [Supabase](https://supabase.com)).
+- Set `AUTH_SECRET`, `AUTH_EMAIL`, and `AUTH_PASSWORD` in your Vercel dashboard.
+
+### 2. Add Prisma build step
+
+In the Vercel dashboard, set the **Build Command** to:
+
+```bash
+prisma generate && prisma migrate deploy && next build
+```
+
+This ensures the Prisma client is generated and migrations are applied before each deploy.
+
+### 3. Deploy
+
+1. Import the project in Vercel.
+2. Add the environment variables.
+3. Hit **Deploy**.
+
+After the first deploy, visit the site and sign in with the authorized credentials.
+
+## Notes
+
+- `AUTH_PASSWORD` is plain text for simplicity because the app is single-user. Change it in your environment whenever you want to rotate the password.
+- The `proxy.ts` route guard protects the whole app except `/login` and `/api/auth/*`.
+- Open trades are trades with no `closeDate`; they appear in the **Open positions** list and do not affect balance/stats.
