@@ -57,6 +57,28 @@ export function useData() {
     await refreshAccounts();
   }, [refreshAccounts]);
 
+  const updateAccount = useCallback(
+    async (id: string, input: AccountInput) => {
+      const res = await fetch(`/api/accounts/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(input),
+      });
+      if (!res.ok) throw new Error(await parseError(res));
+      await refreshAccounts();
+    },
+    [refreshAccounts],
+  );
+
+  const deleteAccount = useCallback(
+    async (id: string) => {
+      const res = await fetch(`/api/accounts/${id}`, { method: "DELETE" });
+      if (!res.ok) throw new Error(await parseError(res));
+      await refreshAccounts();
+    },
+    [refreshAccounts],
+  );
+
   const createTrade = useCallback(
     async (input: TradeInput) => {
       const res = await fetch("/api/trades", {
@@ -100,6 +122,8 @@ export function useData() {
     refresh,
     refreshTrades,
     createAccount,
+    updateAccount,
+    deleteAccount,
     createTrade,
     updateTrade,
     deleteTrade,

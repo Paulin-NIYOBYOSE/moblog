@@ -36,18 +36,12 @@ async function withAggregates() {
   });
 }
 
-// GET /api/accounts -> list accounts (auto-creates a default one on first run)
+// GET /api/accounts -> list accounts
 export async function GET() {
   if (!(await isAuthenticated())) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   try {
-    const count = await prisma.account.count({ where: { isArchived: false } });
-    if (count === 0) {
-      await prisma.account.create({
-        data: { name: "Main Account", currency: "USD", startingBalance: 10000 },
-      });
-    }
     return NextResponse.json(await withAggregates());
   } catch (error) {
     console.error("GET /api/accounts failed:", error);

@@ -6,7 +6,7 @@ import { ModalProvider } from "@/components/ModalContext";
 import { AccountProvider } from "@/components/AccountContext";
 import { useData } from "@/lib/useData";
 import AccountModal from "@/components/AccountModal";
-import type { AccountInput } from "@/lib/types";
+import type { Account, AccountInput } from "@/lib/types";
 import DashboardModals from "@/components/DashboardModals";
 
 export default function DashboardLayout({
@@ -15,9 +15,33 @@ export default function DashboardLayout({
   children: React.ReactNode;
 }) {
   const data = useData();
-  const { accounts, createAccount } = data;
+  const { accounts, createAccount, updateAccount, deleteAccount } = data;
 
   const [accountModalOpen, setAccountModalOpen] = useState(false);
+  const [editingAccount, setEditingAccount] = useState<Account | null>(null);
+
+  function openAddAccount() {
+    setEditingAccount(null);
+    setAccountModalOpen(true);
+  }
+
+  function openEditAccount(account: Account) {
+    setEditingAccount(account);
+    setAccountModalOpen(true);
+  }
+
+  function closeAccountModal() {
+    setAccountModalOpen(false);
+    setEditingAccount(null);
+  }
+
+  async function handleAccountSubmit(input: AccountInput) {
+    if (editingAccount) {
+      await updateAccount(editingAccount.id, input);
+    } else {
+      await createAccount(input);
+    }
+  }
 
   return (
     <AccountProvider>
@@ -34,7 +58,8 @@ export default function DashboardLayout({
           onAddTrade={() =>
             window.dispatchEvent(new CustomEvent("dashboard-open-modal"))
           }
-          onAddAccount={() => setAccountModalOpen(true)}
+          onAddAccount={openAddAccount}
+          onEditAccount={openEditAccount}
         >
           {children}
         </AppLayout>
@@ -44,11 +69,10 @@ export default function DashboardLayout({
 
       <AccountModal
         open={accountModalOpen}
-        onClose={() => setAccountModalOpen(false)}
-        onSubmit={async (input: AccountInput) => {
-          await createAccount(input);
-          setAccountModalOpen(false);
-        }}
+        account={editingAccount}
+        onClose={closeAccountModal}
+        onSubmit={handleAccountSubmit}
+        onDelete={deleteAccount}
       />
     </AccountProvider>
   );
