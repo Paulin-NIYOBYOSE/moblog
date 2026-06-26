@@ -8,6 +8,7 @@ import { useSelectedAccount } from "@/components/AccountContext";
 import { useModal } from "@/components/ModalContext";
 import StatCards from "@/components/StatCards";
 import EquityCurve from "@/components/EquityCurve";
+import MonthlyChart from "@/components/MonthlyChart";
 import OpenPositions from "@/components/OpenPositions";
 import JournalTable from "@/components/JournalTable";
 import {
@@ -74,14 +75,16 @@ export default function DashboardPage() {
         <div className="space-y-5">
           <StatCards stats={stats} />
 
+          <div className="grid grid-cols-1 gap-5">
+            <EquityCurve
+              trades={filteredTrades}
+              startingBalance={selectedAccount?.startingBalance ?? 0}
+            />
+            <MonthlyChart trades={filteredTrades} />
+          </div>
+
           <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
-            <div className="lg:col-span-2">
-              <EquityCurve
-                trades={filteredTrades}
-                startingBalance={selectedAccount?.startingBalance ?? 0}
-              />
-            </div>
-            <div className="rounded-2xl border border-border bg-card p-5">
+            <div className="rounded-2xl border border-border bg-card p-5 lg:col-span-1">
               <div className="mb-3 flex items-center gap-2">
                 <TrendingUp className="h-4 w-4 text-accent" />
                 <h3 className="text-sm font-semibold">Quick summary</h3>
@@ -143,9 +146,10 @@ export default function DashboardPage() {
                 </Link>
               </div>
             </div>
+            <div className="lg:col-span-2">
+              <OpenPositions trades={filteredTrades} onEdit={openEdit} />
+            </div>
           </div>
-
-          <OpenPositions trades={filteredTrades} onEdit={openEdit} />
 
           <div>
             <div className="mb-3 flex items-center justify-between">
@@ -185,8 +189,8 @@ function LoadingState() {
           />
         ))}
       </div>
-      <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
-        <div className="h-[220px] animate-pulse rounded-2xl border border-border bg-card lg:col-span-2" />
+      <div className="grid grid-cols-1 gap-5">
+        <div className="h-[220px] animate-pulse rounded-2xl border border-border bg-card" />
         <div className="h-[220px] animate-pulse rounded-2xl border border-border bg-card" />
       </div>
     </div>

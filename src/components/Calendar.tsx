@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import type { DayAggregate, Trade } from "@/lib/types";
 import {
@@ -15,6 +15,7 @@ import {
 interface CalendarProps {
   trades: Trade[];
   onSelectDay: (dateKey: string) => void;
+  initialMonth?: string; // yyyy-mm
 }
 
 interface Cell {
@@ -26,11 +27,30 @@ interface Cell {
   isToday: boolean;
 }
 
-export default function Calendar({ trades, onSelectDay }: CalendarProps) {
+export default function Calendar({
+  trades,
+  onSelectDay,
+  initialMonth,
+}: CalendarProps) {
   const [cursor, setCursor] = useState(() => {
+    if (initialMonth) {
+      const [year, month] = initialMonth.split("-").map(Number);
+      if (year && month && month >= 1 && month <= 12) {
+        return new Date(year, month - 1, 1);
+      }
+    }
     const now = new Date();
     return new Date(now.getFullYear(), now.getMonth(), 1);
   });
+
+  useEffect(() => {
+    if (initialMonth) {
+      const [year, month] = initialMonth.split("-").map(Number);
+      if (year && month && month >= 1 && month <= 12) {
+        setCursor(new Date(year, month - 1, 1));
+      }
+    }
+  }, [initialMonth]);
 
   const aggMap = useMemo(() => {
     const map = new Map<string, DayAggregate>();

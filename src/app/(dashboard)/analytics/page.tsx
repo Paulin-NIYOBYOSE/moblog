@@ -1,7 +1,7 @@
 "use client";
 
 import { Suspense, useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { AlertTriangle, CalendarDays, SlidersHorizontal } from "lucide-react";
 import { useData } from "@/lib/useData";
 import CustomSelect from "@/components/CustomSelect";
@@ -38,6 +38,7 @@ function AnalyticsPageInner() {
     useSelectedAccount(accounts);
   const { openEdit, openAdd } = useModal();
   const searchParams = useSearchParams();
+  const router = useRouter();
 
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
@@ -45,6 +46,39 @@ function AnalyticsPageInner() {
   const [showFilters, setShowFilters] = useState(false);
   const [dayPanelOpen, setDayPanelOpen] = useState(false);
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
+
+  const initialMonth = searchParams.get("month") ?? undefined;
+
+  const monthOptions = useMemo(() => {
+    const set = new Set<string>();
+    for (const t of trades) {
+      if (t.closeDate) {
+        const d = new Date(t.closeDate);
+        set.add(
+          `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`,
+        );
+      }
+      const od = new Date(t.openDate);
+      set.add(
+        `${od.getFullYear()}-${String(od.getMonth() + 1).padStart(2, "0")}`,
+      );
+    }
+    const sorted = Array.from(set).sort().reverse();
+    return [
+      { value: "", label: "All months" },
+      ...sorted.map((m) => {
+        const [year, month] = m.split("-");
+        const date = new Date(Number(year), Number(month) - 1, 1);
+        return {
+          value: m,
+          label: date.toLocaleString("default", {
+            month: "long",
+            year: "numeric",
+          }),
+        };
+      }),
+    ];
+  }, [trades]);
 
   useEffect(() => {
     const date = searchParams.get("date");
@@ -60,6 +94,13 @@ function AnalyticsPageInner() {
       : trades;
     if (direction !== "ALL")
       list = list.filter((t) => t.direction === direction);
+    if (initialMonth) {
+      list = list.filter((t) => {
+        const d = new Date(t.closeDate || t.openDate);
+        const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+        return key === initialMonth;
+      });
+    }
     if (dateFrom)
       list = list.filter(
         (t) => dateKey(new Date(t.closeDate || t.openDate)) >= dateFrom,
@@ -69,7 +110,7 @@ function AnalyticsPageInner() {
         (t) => dateKey(new Date(t.closeDate || t.openDate)) <= dateTo,
       );
     return list;
-  }, [trades, selectedAccount, direction, dateFrom, dateTo]);
+  }, [trades, selectedAccount, direction, initialMonth, dateFrom, dateTo]);
 
   const stats = useMemo(
     () => computeStats(filteredTrades, selectedAccount?.startingBalance ?? 0),
@@ -84,6 +125,17 @@ function AnalyticsPageInner() {
   function handleEdit(trade: Trade) {
     setDayPanelOpen(false);
     openEdit(trade);
+  }
+
+  function handleMonthChange(value: string) {
+    const params = new URLSearchParams(searchParams.toString());
+    if (value) {
+      params.set("month", value);
+    } else {
+      params.delete("month");
+    }
+    params.delete("date");
+    router.replace(`/analytics?${params.toString()}`, { scroll: false });
   }
 
   return (
@@ -114,6 +166,12 @@ function AnalyticsPageInner() {
               { value: "", label: "All accounts" },
               ...accounts.map((a) => ({ value: a.id, label: a.name })),
             ]}
+            className="w-48"
+          />
+          <CustomSelect
+            value={initialMonth || ""}
+            onChange={handleMonthChange}
+            options={monthOptions}
             className="w-48"
           />
           <button
@@ -173,7 +231,11 @@ function AnalyticsPageInner() {
               <CalendarDays className="h-4 w-4 text-accent" />
               <h3 className="text-sm font-semibold">Calendar</h3>
             </div>
-            <Calendar trades={filteredTrades} onSelectDay={selectDay} />
+            <Calendar
+              trades={filteredTrades}
+              onSelectDay={selectDay}
+              initialMonth={initialMonth}
+            />
           </div>
 
           <Analytics stats={stats} trades={filteredTrades} />

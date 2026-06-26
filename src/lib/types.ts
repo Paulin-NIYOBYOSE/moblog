@@ -99,6 +99,14 @@ export interface DayAggregate {
   wins: number;
 }
 
+export interface MonthAggregate {
+  month: string; // yyyy-mm
+  label: string; // e.g. "Jan 2026"
+  pnl: number;
+  trades: number;
+  wins: number;
+}
+
 // A trade with its running account balance attached (after the trade closed).
 export interface TradeWithBalance extends Trade {
   balance: number;

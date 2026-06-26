@@ -155,4 +155,6 @@ After the first deploy, visit the site and sign in with the authorized credentia
 - The `proxy.ts` route guard protects the whole app except `/login` and `/api/auth/*`.
 - **Manage accounts:** in the sidebar, expand the **Accounts** section. Each account has a pencil (edit) and trash (delete) icon. Delete cascades and removes all trades for that account.
 - **Manage trades:** click any trade in the Trades page or Journal table to edit; the trade modal has a **Delete** button.
+- **Monthly view:** the Dashboard has a monthly PnL bar chart. Click any month to open the Analytics page focused on that month.
+- **Analytics month filter:** use the month dropdown in the Analytics page to jump to a specific month. The calendar, stats, and analytics all update to that month, and the calendar header shows the month’s total PnL.
 - Open trades are trades with no `closeDate`; they appear in the **Open positions** list and do not affect balance/stats.

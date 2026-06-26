@@ -1,4 +1,10 @@
-import type { DayAggregate, Stats, Trade, TradeWithBalance } from "./types";
+import type {
+  DayAggregate,
+  MonthAggregate,
+  Stats,
+  Trade,
+  TradeWithBalance,
+} from "./types";
 
 /** Join class names, skipping falsy values. */
 export function cn(...classes: Array<string | false | null | undefined>): string {
@@ -173,6 +179,29 @@ export function aggregateByDay(trades: Trade[]): DayAggregate[] {
     map.set(key, existing);
   }
   return Array.from(map.values()).sort((a, b) => a.date.localeCompare(b.date));
+}
+
+/** Group closed trades by month. */
+export function aggregateByMonth(trades: Trade[]): MonthAggregate[] {
+  const map = new Map<string, MonthAggregate>();
+  for (const t of trades) {
+    if (!isClosed(t)) continue;
+    const d = new Date(effectiveDate(t));
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+    const label = `${MONTHS[d.getMonth()].slice(0, 3)} ${d.getFullYear()}`;
+    const existing = map.get(key) ?? {
+      month: key,
+      label,
+      pnl: 0,
+      trades: 0,
+      wins: 0,
+    };
+    existing.pnl += t.pnl;
+    existing.trades += 1;
+    if (t.pnl > 0) existing.wins += 1;
+    map.set(key, existing);
+  }
+  return Array.from(map.values()).sort((a, b) => a.month.localeCompare(b.month));
 }
 
 /** Equity curve: running account balance after each closed trade. */
