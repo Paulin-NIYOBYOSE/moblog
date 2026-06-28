@@ -30,8 +30,9 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
-# env files — .env.example is safe to commit as a template
+# env files — never push real or example env files
 .env
+.env.example
 .env.local
 .env.*.local
 
