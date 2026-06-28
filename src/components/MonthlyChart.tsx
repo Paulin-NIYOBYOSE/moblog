@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { BarChart2 } from "lucide-react";
 import type { Trade } from "@/lib/types";
@@ -22,6 +22,7 @@ export default function MonthlyChart({
   const router = useRouter();
   const svgRef = useRef<SVGSVGElement>(null);
   const [hover, setHover] = useState<number | null>(null);
+  const [mounted, setMounted] = useState(false);
   const gradientId = useId();
 
   const byMonth = aggregateByMonth(trades);
@@ -43,6 +44,13 @@ export default function MonthlyChart({
   const total = data.reduce((sum, d) => sum + d.pnl, 0);
   const activeMonths = data.filter((d) => d.trades > 0).length;
 
+  const dataKey = data.map((d) => d.pnl).join(",");
+  useEffect(() => {
+    setMounted(false);
+    const t = setTimeout(() => setMounted(true), 30);
+    return () => clearTimeout(t);
+  }, [dataKey]);
+
   const W = 900;
   const H = 320;
   const pad = { top: 24, right: 16, bottom: 40, left: 56 };
@@ -52,8 +60,7 @@ export default function MonthlyChart({
   const barW = (chartW / n) * 0.55;
   const zeroY = pad.top + chartH / 2;
 
-  const yFor = (pnl: number) =>
-    zeroY - (pnl / maxAbs) * (chartH / 2);
+  const yFor = (pnl: number) => zeroY - (pnl / maxAbs) * (chartH / 2);
 
   return (
     <div className="rounded-2xl border border-border bg-card p-5">
@@ -82,7 +89,7 @@ export default function MonthlyChart({
         </div>
       </div>
 
-      <div className="mt-5 w-full overflow-hidden">
+      <div className="mt-5 w-full overflow-hidden animate-fade-in">
         <svg
           ref={svgRef}
           viewBox={`0 0 ${W} ${H}`}
@@ -156,12 +163,21 @@ export default function MonthlyChart({
                   width={barW}
                   height={height || 0}
                   rx={6}
-                  fill={
-                    positive
-                      ? `url(#${gradientId})`
-                      : "var(--loss)"
-                  }
+                  fill={positive ? `url(#${gradientId})` : "var(--loss)"}
                   opacity={hasData ? (isHover ? 1 : 0.9) : 0.15}
+                  className={cn(
+                    "transition-opacity duration-200 ease-out",
+                    hasData && mounted
+                      ? positive
+                        ? "animate-grow-bar"
+                        : "animate-grow-bar-down"
+                      : "",
+                  )}
+                  style={{
+                    animationDelay: hasData ? `${i * 60}ms` : "0ms",
+                    filter: isHover ? "brightness(1.15)" : "brightness(1)",
+                    transition: "opacity 200ms ease-out, filter 200ms ease-out",
+                  }}
                 />
                 {hasData && height > 18 && (
                   <text
@@ -194,25 +210,34 @@ export default function MonthlyChart({
         </svg>
 
         {/* Tooltip */}
-        {hover !== null && (
-          <div className="pointer-events-none mt-1 rounded-lg border border-border bg-card px-3 py-2 text-xs shadow-lg">
-            <div className="font-medium">{data[hover].fullLabel}</div>
-            <div
-              className={cn(
-                "tabular-nums",
-                data[hover].pnl >= 0 ? "text-profit" : "text-loss",
-              )}
-            >
-              {formatSignedCurrency(data[hover].pnl)}
-            </div>
-            {data[hover].trades > 0 && (
-              <div className="text-[10px] text-muted">
-                {data[hover].trades} trade
-                {data[hover].trades === 1 ? "" : "s"}
-              </div>
-            )}
+        <div
+          className={cn(
+            "pointer-events-none mt-1 rounded-lg border border-border bg-card px-3 py-2 text-xs shadow-lg transition-all duration-200 ease-out",
+            hover !== null
+              ? "opacity-100 translate-y-0"
+              : "opacity-0 -translate-y-1",
+          )}
+        >
+          <div className="font-medium">
+            {hover !== null ? data[hover].fullLabel : "—"}
           </div>
-        )}
+          <div
+            className={cn(
+              "tabular-nums",
+              hover !== null && data[hover].pnl >= 0
+                ? "text-profit"
+                : "text-loss",
+            )}
+          >
+            {hover !== null ? formatSignedCurrency(data[hover].pnl) : "—"}
+          </div>
+          {hover !== null && data[hover].trades > 0 && (
+            <div className="text-[10px] text-muted">
+              {data[hover].trades} trade
+              {data[hover].trades === 1 ? "" : "s"}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

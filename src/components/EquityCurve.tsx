@@ -1,10 +1,10 @@
 "use client";
 
-import { useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { TrendingUp } from "lucide-react";
 import type { Trade } from "@/lib/types";
-import { equitySeries, formatCurrency, dateKey } from "@/lib/utils";
+import { equitySeries, formatCurrency, dateKey, cn } from "@/lib/utils";
 
 export default function EquityCurve({
   trades,
@@ -16,7 +16,14 @@ export default function EquityCurve({
   const router = useRouter();
   const gradientId = useId();
   const svgRef = useRef<SVGSVGElement>(null);
-  const [hover, setHover] = useState<{ i: number; x: number; y: number } | null>(null);
+  const pathRef = useRef<SVGPathElement>(null);
+  const [hover, setHover] = useState<{
+    i: number;
+    x: number;
+    y: number;
+  } | null>(null);
+  const [pathLength, setPathLength] = useState(0);
+  const [drawn, setDrawn] = useState(false);
 
   const series = equitySeries(trades, startingBalance);
 
@@ -40,7 +47,9 @@ export default function EquityCurve({
     const x = (i: number) => (n === 1 ? W / 2 : (i / (n - 1)) * W);
     const y = (v: number) => H - ((v - min) / range) * H;
 
-    const pts = series.map((s, i) => `${x(i).toFixed(2)},${y(s.value).toFixed(2)}`);
+    const pts = series.map(
+      (s, i) => `${x(i).toFixed(2)},${y(s.value).toFixed(2)}`,
+    );
     path = `M ${pts.join(" L ")}`;
     area = `${path} L ${x(n - 1).toFixed(2)},${H} L ${x(0).toFixed(2)},${H} Z`;
     last = values[values.length - 1];
@@ -48,6 +57,17 @@ export default function EquityCurve({
 
   const positive = last >= startingBalance;
   const stroke = positive ? "var(--profit)" : "var(--loss)";
+
+  const tradeKey = series.map((s) => s.value).join(",");
+  useEffect(() => {
+    const el = pathRef.current;
+    if (!el) return;
+    const len = el.getTotalLength();
+    setPathLength(len);
+    setDrawn(false);
+    const t = setTimeout(() => setDrawn(true), 30);
+    return () => clearTimeout(t);
+  }, [tradeKey]);
 
   function handleMouseMove(e: React.MouseEvent<SVGSVGElement>) {
     if (series.length <= 1) return;
@@ -76,7 +96,10 @@ export default function EquityCurve({
             <TrendingUp className="h-4 w-4 text-accent" />
             <h3 className="text-sm font-medium text-muted">Equity curve</h3>
           </div>
-          <p className="mt-1 text-2xl font-semibold tracking-tight tabular-nums" style={{ color: stroke }}>
+          <p
+            className="mt-1 text-2xl font-semibold tracking-tight tabular-nums"
+            style={{ color: stroke }}
+          >
             {formatCurrency(last)}
           </p>
         </div>
@@ -87,7 +110,9 @@ export default function EquityCurve({
 
       <div className="mt-4 h-28 w-full">
         {series.length <= 1 ? (
-          <div className="flex h-full items-center justify-center text-sm text-muted">No closed trades yet</div>
+          <div className="flex h-full items-center justify-center text-sm text-muted">
+            No closed trades yet
+          </div>
         ) : (
           <svg
             ref={svgRef}
@@ -104,8 +129,14 @@ export default function EquityCurve({
                 <stop offset="100%" stopColor={stroke} stopOpacity="0" />
               </linearGradient>
             </defs>
-            <path d={area} fill={`url(#${gradientId})`} />
             <path
+              d={area}
+              fill={`url(#${gradientId})`}
+              className="animate-fade-in"
+              style={{ animationDuration: "0.8s" }}
+            />
+            <path
+              ref={pathRef}
               d={path}
               fill="none"
               stroke={stroke}
@@ -113,6 +144,12 @@ export default function EquityCurve({
               strokeLinejoin="round"
               strokeLinecap="round"
               vectorEffect="non-scaling-stroke"
+              style={{
+                strokeDasharray: pathLength,
+                strokeDashoffset: drawn ? 0 : pathLength,
+                transition:
+                  "stroke-dashoffset 0.8s ease-out, stroke 0.3s ease-out",
+              }}
             />
             {hover && (
               <>
@@ -125,6 +162,7 @@ export default function EquityCurve({
                   strokeOpacity={0.3}
                   strokeWidth={0.5}
                   vectorEffect="non-scaling-stroke"
+                  className="transition-all duration-150 ease-out"
                 />
                 <circle
                   cx={hover.x}
@@ -134,6 +172,7 @@ export default function EquityCurve({
                   stroke={stroke}
                   strokeWidth={0.6}
                   vectorEffect="non-scaling-stroke"
+                  className="transition-all duration-150 ease-out"
                 />
               </>
             )}
@@ -141,14 +180,19 @@ export default function EquityCurve({
         )}
       </div>
 
-      {hover && (
-        <div className="mt-2 flex items-center justify-between rounded-lg bg-surface-2 px-3 py-2 text-sm">
-          <span className="text-muted">{series[hover.i].date}</span>
-          <span className="font-semibold tabular-nums" style={{ color: stroke }}>
-            {formatCurrency(series[hover.i].value)}
-          </span>
-        </div>
-      )}
+      <div
+        className={cn(
+          "mt-2 flex items-center justify-between rounded-lg bg-surface-2 px-3 py-2 text-sm transition-all duration-200 ease-out",
+          hover
+            ? "opacity-100 translate-y-0"
+            : "opacity-0 -translate-y-1 pointer-events-none",
+        )}
+      >
+        <span className="text-muted">{hover ? series[hover.i].date : "—"}</span>
+        <span className="font-semibold tabular-nums" style={{ color: stroke }}>
+          {hover ? formatCurrency(series[hover.i].value) : "—"}
+        </span>
+      </div>
     </div>
   );
 }
