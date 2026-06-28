@@ -143,30 +143,35 @@ export default function MonthlyChart({
           {data.map((d, i) => {
             const x = pad.left + (i + 0.5) * (chartW / n) - barW / 2;
             const y = yFor(d.pnl);
-            const height = Math.abs(zeroY - y);
+            const height = Math.max(4, Math.abs(zeroY - y));
             const positive = d.pnl >= 0;
             const hasData = d.trades > 0;
             const isHover = hover === i;
+            const barY = d.pnl === 0 ? zeroY - 2 : Math.min(y, zeroY);
             return (
               <g
                 key={d.key}
                 className="cursor-pointer"
                 onMouseEnter={() => setHover(i)}
                 onMouseLeave={() => setHover(null)}
-                onClick={() =>
-                  hasData && router.push(`/analytics?month=${d.key}`)
-                }
+                onClick={() => router.push(`/analytics?month=${d.key}`)}
               >
                 <rect
                   x={x}
-                  y={Math.min(y, zeroY)}
+                  y={barY}
                   width={barW}
-                  height={height || 0}
-                  rx={6}
-                  fill={positive ? `url(#${gradientId})` : "var(--loss)"}
-                  opacity={hasData ? (isHover ? 1 : 0.9) : 0.15}
+                  height={height}
+                  rx={4}
+                  fill={
+                    hasData
+                      ? positive
+                        ? `url(#${gradientId})`
+                        : "var(--loss)"
+                      : "var(--muted)"
+                  }
+                  opacity={isHover ? 1 : hasData ? 0.9 : 0.35}
                   className={cn(
-                    "transition-opacity duration-200 ease-out",
+                    "transition-all duration-200 ease-out",
                     hasData && mounted
                       ? positive
                         ? "animate-grow-bar"
@@ -231,10 +236,11 @@ export default function MonthlyChart({
           >
             {hover !== null ? formatSignedCurrency(data[hover].pnl) : "—"}
           </div>
-          {hover !== null && data[hover].trades > 0 && (
+          {hover !== null && (
             <div className="text-[10px] text-muted">
-              {data[hover].trades} trade
-              {data[hover].trades === 1 ? "" : "s"}
+              {data[hover].trades > 0
+                ? `${data[hover].trades} trade${data[hover].trades === 1 ? "" : "s"}`
+                : "No trading activity"}
             </div>
           )}
         </div>
