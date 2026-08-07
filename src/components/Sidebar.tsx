@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useId, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
@@ -15,7 +15,9 @@ import {
   Plus,
   Trash2,
   Wallet,
+  FileText,
 } from "lucide-react";
+import { motion } from "motion/react";
 import ThemeToggle from "./ThemeToggle";
 import type { Account } from "@/lib/types";
 import { cn, formatCurrency } from "@/lib/utils";
@@ -24,6 +26,7 @@ const NAV = [
   { label: "Dashboard", href: "/", icon: LayoutDashboard },
   { label: "Trades", href: "/journal", icon: ListOrdered },
   { label: "Analytics", href: "/analytics", icon: BarChart3 },
+  { label: "Content", href: "/content", icon: FileText },
 ];
 
 export default function Sidebar({
@@ -53,6 +56,7 @@ export default function Sidebar({
 }) {
   const pathname = usePathname();
   const [showAccounts, setShowAccounts] = useState(true);
+  const activeNavLayoutId = useId();
 
   return (
     <>
@@ -102,13 +106,20 @@ export default function Sidebar({
                 key={item.label}
                 href={item.href}
                 className={cn(
-                  "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
+                  "relative flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
                   active
-                    ? "bg-surface-2 text-foreground"
+                    ? "text-foreground"
                     : "text-muted hover:bg-surface-2 hover:text-foreground",
                 )}
               >
-                <item.icon className="h-4.5 w-4.5" />
+                {active && (
+                  <motion.span
+                    layoutId={activeNavLayoutId}
+                    className="absolute inset-0 -z-10 rounded-lg bg-surface-2"
+                    transition={{ type: "spring", bounce: 0.2, duration: 0.4 }}
+                  />
+                )}
+                <item.icon className={cn("h-4.5 w-4.5", active && "text-accent")} />
                 {item.label}
               </Link>
             );

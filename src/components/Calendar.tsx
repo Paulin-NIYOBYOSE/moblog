@@ -106,10 +106,7 @@ export default function Calendar({
   }
 
   return (
-    <div
-      id="calendar"
-      className="rounded-2xl border border-border bg-card p-4 sm:p-5 scroll-mt-20"
-    >
+    <div>
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           <h2 className="text-base font-semibold tracking-tight">
@@ -154,7 +151,7 @@ export default function Calendar({
         </div>
       </div>
 
-      <div className="grid grid-cols-[repeat(7,1fr)_minmax(64px,0.8fr)] gap-1.5 sm:gap-2">
+      <div className="grid grid-cols-[repeat(7,1fr)_minmax(38px,0.8fr)] gap-1.5 sm:grid-cols-[repeat(7,1fr)_minmax(64px,0.8fr)] sm:gap-2">
         {WEEKDAYS.map((d) => (
           <div
             key={d}
@@ -201,16 +198,16 @@ function DayRow({
       {week.map((cell) => (
         <DayCell key={cell.key} cell={cell} onSelectDay={onSelectDay} />
       ))}
-      <div className="flex flex-col justify-center rounded-lg bg-surface-2 px-2 py-2 text-right">
+      <div className="flex min-w-0 flex-col justify-center rounded-lg bg-surface-2 px-1 py-2 text-right sm:px-2">
         {weekDays > 0 ? (
           <>
             <span
-              className="text-sm font-semibold tabular-nums"
+              className="block truncate text-[11px] font-semibold tabular-nums sm:text-sm"
               style={{ color: weekNet >= 0 ? "var(--profit)" : "var(--loss)" }}
             >
               {formatSignedCurrency(weekNet, { compact: true })}
             </span>
-            <span className="text-[11px] text-muted">{weekDays}d</span>
+            <span className="text-[10px] text-muted sm:text-[11px]">{weekDays}d</span>
           </>
         ) : (
           <span className="text-[11px] text-muted">—</span>
@@ -241,9 +238,9 @@ function DayCell({
       type="button"
       onClick={() => onSelectDay(cell.dateKey)}
       className={cn(
-        "group min-h-[68px] rounded-lg border p-1.5 text-left transition-all sm:min-h-[84px] sm:p-2",
+        "group min-h-[68px] min-w-0 overflow-hidden rounded-lg border p-1.5 text-left transition-all duration-150 sm:min-h-[84px] sm:p-2",
         agg
-          ? "border-transparent"
+          ? "border-transparent hover:scale-[1.03] hover:shadow-md"
           : "border-border bg-surface hover:bg-surface-2",
         cell.isToday && "ring-1 ring-accent",
       )}
@@ -269,14 +266,14 @@ function DayCell({
         </span>
       </div>
       {agg && (
-        <div className="mt-1.5">
+        <div className="mt-1.5 min-w-0">
           <div
-            className="text-[13px] font-semibold leading-tight tabular-nums sm:text-sm"
+            className="truncate text-[13px] font-semibold leading-tight tabular-nums sm:text-sm"
             style={{ color: positive ? "var(--profit)" : "var(--loss)" }}
           >
             {formatSignedCurrency(agg.pnl, { compact: true })}
           </div>
-          <div className="mt-0.5 text-[10px] text-muted sm:text-[11px]">
+          <div className="mt-0.5 truncate text-[10px] text-muted sm:text-[11px]">
             {agg.trades} trade{agg.trades === 1 ? "" : "s"} · {winRate}%
           </div>
         </div>

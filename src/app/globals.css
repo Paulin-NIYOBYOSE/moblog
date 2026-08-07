@@ -17,6 +17,36 @@
   --loss: #e0453f;
   --profit-soft: rgba(21, 160, 92, 0.1);
   --loss-soft: rgba(224, 69, 63, 0.1);
+
+  /* Status tones (non-P&L) */
+  --warning: #b45309;
+  --warning-soft: rgba(180, 83, 9, 0.1);
+  --info: #2563eb;
+  --info-soft: rgba(37, 99, 235, 0.1);
+
+  /* Categorical chart palette — identity data only (market, session, setup).
+     Deliberately excludes green/red: those are reserved for profit/loss so a
+     category is never misread as "good/bad". Validated (adjacent-pairs, the
+     correct scope for bar/legend charts) against this app's card surfaces via
+     the dataviz skill's validate_palette.js. Slots 3/4/5 read under 3:1
+     contrast on light surfaces — always pair with a visible label, never rely
+     on hue alone. */
+  --chart-1: #2a78d6; /* blue */
+  --chart-2: #eb6834; /* orange */
+  --chart-3: #0e7fa3; /* cyan */
+  --chart-4: #eda100; /* yellow */
+  --chart-5: #e87ba4; /* magenta */
+  --chart-6: #4a3aa7; /* violet */
+  --chart-grid: #e7e9ee;
+  --chart-axis: #c7cbd4;
+
+  /* Elevation scale */
+  --shadow-xs: 0 1px 1px rgba(13, 17, 23, 0.03);
+  --shadow-sm: 0 1px 2px rgba(13, 17, 23, 0.04), 0 1px 1px rgba(13, 17, 23, 0.03);
+  --shadow-md: 0 4px 12px rgba(13, 17, 23, 0.06), 0 2px 4px rgba(13, 17, 23, 0.04);
+  --shadow-lg: 0 12px 32px rgba(13, 17, 23, 0.1), 0 4px 8px rgba(13, 17, 23, 0.04);
+  --shadow-xl: 0 20px 48px rgba(13, 17, 23, 0.14), 0 6px 12px rgba(13, 17, 23, 0.06);
+  --shadow-2xl: 0 28px 64px rgba(13, 17, 23, 0.18);
 }
 
 .dark {
@@ -33,6 +63,27 @@
   --loss: #f25852;
   --profit-soft: rgba(47, 209, 122, 0.12);
   --loss-soft: rgba(242, 88, 82, 0.12);
+
+  --warning: #fbbf24;
+  --warning-soft: rgba(251, 191, 36, 0.14);
+  --info: #60a5fa;
+  --info-soft: rgba(96, 165, 250, 0.14);
+
+  --chart-1: #3987e5;
+  --chart-2: #d95926;
+  --chart-3: #0f7d9e;
+  --chart-4: #c98500;
+  --chart-5: #d55181;
+  --chart-6: #9085e9;
+  --chart-grid: #23262f;
+  --chart-axis: #383b47;
+
+  --shadow-xs: 0 1px 1px rgba(0, 0, 0, 0.24);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.28);
+  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.36);
+  --shadow-lg: 0 16px 40px rgba(0, 0, 0, 0.44);
+  --shadow-xl: 0 24px 56px rgba(0, 0, 0, 0.5);
+  --shadow-2xl: 0 32px 72px rgba(0, 0, 0, 0.56);
 }
 
 @theme inline {
@@ -49,10 +100,28 @@
   --color-loss: var(--loss);
   --color-profit-soft: var(--profit-soft);
   --color-loss-soft: var(--loss-soft);
+  --color-warning: var(--warning);
+  --color-warning-soft: var(--warning-soft);
+  --color-info: var(--info);
+  --color-info-soft: var(--info-soft);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-chart-6: var(--chart-6);
+  --color-chart-grid: var(--chart-grid);
+  --color-chart-axis: var(--chart-axis);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
   --radius-xl: 0.875rem;
   --radius-2xl: 1.125rem;
+  --shadow-xs: var(--shadow-xs);
+  --shadow-sm: var(--shadow-sm);
+  --shadow-md: var(--shadow-md);
+  --shadow-lg: var(--shadow-lg);
+  --shadow-xl: var(--shadow-xl);
+  --shadow-2xl: var(--shadow-2xl);
 }
 
 * {
@@ -80,7 +149,9 @@ body {
     sans-serif;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
+  transition: background-color 0.25s ease, color 0.25s ease;
 }
+
 
 /* Thin, unobtrusive scrollbars */
 ::-webkit-scrollbar {
@@ -131,6 +202,24 @@ body {
   to {
     stroke-dashoffset: 0;
   }
+}
+@keyframes shimmer {
+  from {
+    background-position: -200% 0;
+  }
+  to {
+    background-position: 200% 0;
+  }
+}
+.animate-shimmer {
+  background-image: linear-gradient(
+    90deg,
+    var(--surface-2) 25%,
+    var(--border) 50%,
+    var(--surface-2) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.6s ease-in-out infinite;
 }
 .animate-fade-in {
   animation: fade-in 0.18s ease-out;

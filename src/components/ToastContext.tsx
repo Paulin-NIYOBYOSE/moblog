@@ -2,6 +2,7 @@
 
 import { createContext, useContext, useState } from "react";
 import { X, CheckCircle, AlertCircle, Loader2 } from "lucide-react";
+import { AnimatePresence, motion } from "motion/react";
 import { cn } from "@/lib/utils";
 
 interface Toast {
@@ -53,35 +54,42 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
     <ToastContext.Provider value={{ toast }}>
       {children}
       <div className="fixed bottom-4 right-4 z-50 flex flex-col gap-2">
-        {toasts.map((t) => (
-          <div
-            key={t.id}
-            className={cn(
-              "flex items-center gap-3 rounded-xl border px-4 py-3 shadow-xl animate-pop-in",
-              t.type === "success" && "border-profit/30 bg-card text-foreground",
-              t.type === "error" && "border-loss/30 bg-card text-foreground",
-              t.type === "loading" && "border-border bg-card text-foreground",
-            )}
-          >
-            {t.type === "success" && (
-              <CheckCircle className="h-4 w-4 shrink-0 text-profit" />
-            )}
-            {t.type === "error" && (
-              <AlertCircle className="h-4 w-4 shrink-0 text-loss" />
-            )}
-            {t.type === "loading" && (
-              <Loader2 className="h-4 w-4 shrink-0 animate-spin text-accent" />
-            )}
-            <span className="text-sm">{t.message}</span>
-            <button
-              type="button"
-              onClick={() => remove(t.id)}
-              className="ml-2 rounded-md p-1 text-muted hover:bg-surface-2 hover:text-foreground"
+        <AnimatePresence initial={false}>
+          {toasts.map((t) => (
+            <motion.div
+              key={t.id}
+              layout
+              initial={{ opacity: 0, y: 12, scale: 0.96 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, x: 40, scale: 0.96 }}
+              transition={{ type: "spring", damping: 26, stiffness: 320 }}
+              className={cn(
+                "flex items-center gap-3 rounded-xl border px-4 py-3 shadow-xl",
+                t.type === "success" && "border-profit/30 bg-card text-foreground",
+                t.type === "error" && "border-loss/30 bg-card text-foreground",
+                t.type === "loading" && "border-border bg-card text-foreground",
+              )}
             >
-              <X className="h-3.5 w-3.5" />
-            </button>
-          </div>
-        ))}
+              {t.type === "success" && (
+                <CheckCircle className="h-4 w-4 shrink-0 text-profit" />
+              )}
+              {t.type === "error" && (
+                <AlertCircle className="h-4 w-4 shrink-0 text-loss" />
+              )}
+              {t.type === "loading" && (
+                <Loader2 className="h-4 w-4 shrink-0 animate-spin text-accent" />
+              )}
+              <span className="text-sm">{t.message}</span>
+              <button
+                type="button"
+                onClick={() => remove(t.id)}
+                className="ml-2 rounded-md p-1 text-muted hover:bg-surface-2 hover:text-foreground"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </motion.div>
+          ))}
+        </AnimatePresence>
       </div>
     </ToastContext.Provider>
   );

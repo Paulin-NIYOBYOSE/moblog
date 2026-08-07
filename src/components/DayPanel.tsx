@@ -2,8 +2,9 @@
 
 import { useEffect } from "react";
 import { ArrowDownRight, ArrowUpRight, Plus, X } from "lucide-react";
+import { AnimatePresence, motion } from "motion/react";
 import type { Trade } from "@/lib/types";
-import { dateKey, formatCurrency, formatSignedCurrency, isClosed } from "@/lib/utils";
+import { dateKey, formatSignedCurrency, isClosed } from "@/lib/utils";
 
 export default function DayPanel({
   open,
@@ -28,8 +29,34 @@ export default function DayPanel({
     return () => window.removeEventListener("keydown", onKey);
   }, [open, onClose]);
 
-  if (!open || !day) return null;
+  return (
+    <AnimatePresence>
+      {open && day && (
+        <DayPanelContent
+          day={day}
+          trades={trades}
+          onClose={onClose}
+          onAddForDay={onAddForDay}
+          onEditTrade={onEditTrade}
+        />
+      )}
+    </AnimatePresence>
+  );
+}
 
+function DayPanelContent({
+  day,
+  trades,
+  onClose,
+  onAddForDay,
+  onEditTrade,
+}: {
+  day: string;
+  trades: Trade[];
+  onClose: () => void;
+  onAddForDay: (day: string) => void;
+  onEditTrade: (trade: Trade) => void;
+}) {
   const dayTrades = trades.filter((t) =>
     dateKey(new Date(t.closeDate || t.openDate)) === day,
   );
@@ -46,8 +73,21 @@ export default function DayPanel({
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end">
-      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm animate-fade-in" onClick={onClose} />
-      <div className="relative z-10 flex h-full w-full max-w-sm flex-col border-l border-border bg-card shadow-2xl animate-fade-in">
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        transition={{ duration: 0.2 }}
+        className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+        onClick={onClose}
+      />
+      <motion.div
+        initial={{ x: "100%" }}
+        animate={{ x: 0 }}
+        exit={{ x: "100%" }}
+        transition={{ type: "spring", damping: 32, stiffness: 320 }}
+        className="relative z-10 flex h-full w-full max-w-sm flex-col border-l border-border bg-card shadow-2xl"
+      >
         <div className="flex items-start justify-between border-b border-border px-5 py-4">
           <div>
             <h2 className="text-base font-semibold">{label}</h2>
@@ -68,7 +108,10 @@ export default function DayPanel({
         {closed.length > 0 && (
           <div className="border-b border-border px-5 py-3">
             <span className="text-xs text-muted">Day P&L</span>
-            <div className="text-2xl font-semibold tabular-nums" style={{ color: total >= 0 ? "var(--profit)" : "var(--loss)" }}>
+            <div
+              className="text-2xl font-semibold tabular-nums"
+              style={{ color: total >= 0 ? "var(--profit)" : "var(--loss)" }}
+            >
               {formatSignedCurrency(total)}
             </div>
           </div>
@@ -81,7 +124,7 @@ export default function DayPanel({
             <div className="space-y-2">
               {dayTrades.map((t) => {
                 const positive = t.pnl >= 0;
-                const closed = isClosed(t);
+                const closedTrade = isClosed(t);
                 return (
                   <button
                     key={t.id}
@@ -106,7 +149,7 @@ export default function DayPanel({
                       <div>
                         <div className="font-medium">{t.pair}</div>
                         <div className="text-xs text-muted">
-                          {t.setup || t.direction} {closed && t.exitLogic ? `· ${t.exitLogic}` : "· open"}
+                          {t.setup || t.direction} {closedTrade && t.exitLogic ? `· ${t.exitLogic}` : "· open"}
                         </div>
                       </div>
                     </div>
@@ -114,7 +157,7 @@ export default function DayPanel({
                       className="font-semibold tabular-nums"
                       style={{ color: positive ? "var(--profit)" : "var(--loss)" }}
                     >
-                      {closed ? formatSignedCurrency(t.pnl) : "open"}
+                      {closedTrade ? formatSignedCurrency(t.pnl) : "open"}
                     </span>
                   </button>
                 );
@@ -132,7 +175,7 @@ export default function DayPanel({
             <Plus className="h-4 w-4" /> Add trade for this day
           </button>
         </div>
-      </div>
+      </motion.div>
     </div>
   );
 }

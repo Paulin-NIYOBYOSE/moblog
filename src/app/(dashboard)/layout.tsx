@@ -5,6 +5,7 @@ import { ModalProvider } from "@/components/ModalContext";
 import { AccountProvider } from "@/components/AccountContext";
 import { ToastProvider } from "@/components/ToastContext";
 import { ConfirmProvider } from "@/components/ConfirmContext";
+import { ThemeProvider } from "@/components/ThemeContext";
 import { useData } from "@/lib/useData";
 import AccountModal from "@/components/AccountModal";
 import type { Account, AccountInput } from "@/lib/types";
@@ -18,13 +19,15 @@ export default function DashboardLayout({
   children: React.ReactNode;
 }) {
   return (
-    <ToastProvider>
-      <ConfirmProvider>
-        <AccountProvider>
-          <DashboardLayoutInner>{children}</DashboardLayoutInner>
-        </AccountProvider>
-      </ConfirmProvider>
-    </ToastProvider>
+    <ThemeProvider>
+      <ToastProvider>
+        <ConfirmProvider>
+          <AccountProvider>
+            <DashboardLayoutInner>{children}</DashboardLayoutInner>
+          </AccountProvider>
+        </ConfirmProvider>
+      </ToastProvider>
+    </ThemeProvider>
   );
 }
 

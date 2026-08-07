@@ -2,7 +2,7 @@
 
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { AlertTriangle, CalendarDays, SlidersHorizontal } from "lucide-react";
+import { AlertTriangle, CalendarDays, Hash, SlidersHorizontal, TrendingDown } from "lucide-react";
 import { useData } from "@/lib/useData";
 import CustomSelect from "@/components/CustomSelect";
 import { useSelectedAccount } from "@/components/AccountContext";
@@ -11,8 +11,24 @@ import Analytics from "@/components/Analytics";
 import StatCards from "@/components/StatCards";
 import Calendar from "@/components/Calendar";
 import DayPanel from "@/components/DayPanel";
-import { cn, computeStats, dateKey } from "@/lib/utils";
+import MonthlyMatrix from "@/components/MonthlyMatrix";
+import Card from "@/components/ui/Card";
+import PageHeader from "@/components/ui/PageHeader";
+import FilterBar from "@/components/ui/FilterBar";
+import Skeleton from "@/components/ui/Skeleton";
+import DrawdownChart from "@/components/charts/DrawdownChart";
+import RMultipleHistogram from "@/components/charts/RMultipleHistogram";
+import WeekdayBars from "@/components/charts/WeekdayBars";
+import { cn, computeStats, dateKey, formatCurrency } from "@/lib/utils";
+import {
+  aggregateByWeekday,
+  computeDrawdown,
+  computeRMultipleDistribution,
+  monthlyReturnMatrix,
+} from "@/lib/analytics";
 import type { Trade } from "@/lib/types";
+
+type Direction = "ALL" | "LONG" | "SHORT";
 
 export default function AnalyticsPage() {
   return (
@@ -25,9 +41,9 @@ export default function AnalyticsPage() {
 function AnalyticsLoading() {
   return (
     <div className="space-y-5">
-      <div className="h-8 w-40 animate-pulse rounded-lg bg-card" />
-      <div className="h-28 animate-pulse rounded-2xl border border-border bg-card" />
-      <div className="h-96 animate-pulse rounded-2xl border border-border bg-card" />
+      <Skeleton className="h-8 w-40" />
+      <Skeleton className="h-28" />
+      <Skeleton className="h-96" />
     </div>
   );
 }
@@ -42,7 +58,7 @@ function AnalyticsPageInner() {
 
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
-  const [direction, setDirection] = useState<"ALL" | "LONG" | "SHORT">("ALL");
+  const [direction, setDirection] = useState<Direction>("ALL");
   const [showFilters, setShowFilters] = useState(false);
   const [dayPanelOpen, setDayPanelOpen] = useState(false);
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
@@ -112,9 +128,23 @@ function AnalyticsPageInner() {
     return list;
   }, [trades, selectedAccount, direction, initialMonth, dateFrom, dateTo]);
 
+  const startingBalance = selectedAccount?.startingBalance ?? 0;
   const stats = useMemo(
-    () => computeStats(filteredTrades, selectedAccount?.startingBalance ?? 0),
-    [filteredTrades, selectedAccount],
+    () => computeStats(filteredTrades, startingBalance),
+    [filteredTrades, startingBalance],
+  );
+  const drawdown = useMemo(
+    () => computeDrawdown(filteredTrades, startingBalance),
+    [filteredTrades, startingBalance],
+  );
+  const rDistribution = useMemo(
+    () => computeRMultipleDistribution(filteredTrades),
+    [filteredTrades],
+  );
+  const weekdayData = useMemo(() => aggregateByWeekday(filteredTrades), [filteredTrades]);
+  const monthlyMatrix = useMemo(
+    () => monthlyReturnMatrix(filteredTrades, startingBalance),
+    [filteredTrades, startingBalance],
   );
 
   function selectDay(day: string) {
@@ -140,14 +170,10 @@ function AnalyticsPageInner() {
 
   return (
     <div>
-      <div className="mb-6 flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-semibold tracking-tight">Analytics</h1>
-          <p className="mt-0.5 text-sm text-muted">
-            {selectedAccount ? selectedAccount.name : "Loading accounts..."}
-          </p>
-        </div>
-      </div>
+      <PageHeader
+        title="Analytics"
+        subtitle={selectedAccount ? selectedAccount.name : "Loading accounts..."}
+      />
 
       {error && (
         <div className="mb-5 flex items-start gap-2 rounded-xl border border-loss/30 bg-loss-soft px-4 py-3 text-sm text-loss">
@@ -156,43 +182,13 @@ function AnalyticsPageInner() {
         </div>
       )}
 
-      {/* Filters */}
-      <div className="mb-4 rounded-2xl border border-border bg-card p-4">
-        <div className="flex flex-wrap items-center gap-3">
-          <CustomSelect
-            value={selectedAccount?.id || ""}
-            onChange={(v) => setSelectedAccountId(v || null)}
-            options={[
-              { value: "", label: "All accounts" },
-              ...accounts.map((a) => ({ value: a.id, label: a.name })),
-            ]}
-            className="w-48"
-          />
-          <CustomSelect
-            value={initialMonth || ""}
-            onChange={handleMonthChange}
-            options={monthOptions}
-            className="w-48"
-          />
-          <button
-            type="button"
-            onClick={() => setShowFilters((s) => !s)}
-            className={cn(
-              "inline-flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm font-medium transition-colors",
-              showFilters
-                ? "bg-surface-2 text-foreground"
-                : "text-muted hover:bg-surface-2 hover:text-foreground",
-            )}
-          >
-            <SlidersHorizontal className="h-4 w-4" /> Filters
-          </button>
-        </div>
-
-        {showFilters && (
-          <div className="mt-3 grid grid-cols-1 gap-3 border-t border-border pt-3 sm:grid-cols-3">
+      <FilterBar
+        expanded={showFilters}
+        expandedContent={
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             <CustomSelect
               value={direction}
-              onChange={(v) => setDirection(v as any)}
+              onChange={(v) => setDirection(v as Direction)}
               options={[
                 { value: "ALL", label: "All directions" },
                 { value: "LONG", label: "Long only" },
@@ -214,19 +210,47 @@ function AnalyticsPageInner() {
               placeholder="To"
             />
           </div>
-        )}
-      </div>
+        }
+      >
+        <CustomSelect
+          value={selectedAccount?.id || ""}
+          onChange={(v) => setSelectedAccountId(v || null)}
+          options={[
+            { value: "", label: "All accounts" },
+            ...accounts.map((a) => ({ value: a.id, label: a.name })),
+          ]}
+          className="w-48"
+        />
+        <CustomSelect
+          value={initialMonth || ""}
+          onChange={handleMonthChange}
+          options={monthOptions}
+          className="w-48"
+        />
+        <button
+          type="button"
+          onClick={() => setShowFilters((s) => !s)}
+          className={cn(
+            "ml-auto inline-flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm font-medium transition-colors",
+            showFilters
+              ? "bg-surface-2 text-foreground"
+              : "text-muted hover:bg-surface-2 hover:text-foreground",
+          )}
+        >
+          <SlidersHorizontal className="h-4 w-4" /> Filters
+        </button>
+      </FilterBar>
 
       {loading ? (
         <div className="space-y-5">
-          <div className="h-28 animate-pulse rounded-2xl border border-border bg-card" />
-          <div className="h-96 animate-pulse rounded-2xl border border-border bg-card" />
+          <Skeleton className="h-28" />
+          <Skeleton className="h-96" />
         </div>
       ) : (
         <div className="space-y-5">
-          <StatCards stats={stats} />
+          <StatCards stats={stats} trades={filteredTrades} startingBalance={startingBalance} />
 
-          <div className="rounded-2xl border border-border bg-card p-5">
+          <Card id="calendar" scrollMt padding="lg">
             <div className="mb-3 flex items-center gap-2">
               <CalendarDays className="h-4 w-4 text-accent" />
               <h3 className="text-sm font-semibold">Calendar</h3>
@@ -236,9 +260,48 @@ function AnalyticsPageInner() {
               onSelectDay={selectDay}
               initialMonth={initialMonth}
             />
+          </Card>
+
+          <Analytics stats={stats} />
+
+          <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
+            <Card padding="lg">
+              <div className="mb-1 flex items-center gap-2">
+                <TrendingDown className="h-4 w-4 text-loss" />
+                <h3 className="text-sm font-semibold">Drawdown</h3>
+              </div>
+              <p className="mb-3 text-xs text-muted">
+                Max {drawdown.maxDrawdown > 0 ? `${drawdown.maxDrawdownPct.toFixed(1)}%` : "0%"} from
+                peak · {drawdown.longestDrawdownDays} day longest streak underwater
+              </p>
+              <DrawdownChart series={drawdown.series} />
+            </Card>
+
+            <Card padding="lg">
+              <div className="mb-1 flex items-center gap-2">
+                <Hash className="h-4 w-4 text-accent" />
+                <h3 className="text-sm font-semibold">R-multiple distribution</h3>
+              </div>
+              <p className="mb-3 text-xs text-muted">Closed trades with a recorded R:R</p>
+              <RMultipleHistogram data={rDistribution} />
+            </Card>
           </div>
 
-          <Analytics stats={stats} trades={filteredTrades} />
+          <Card padding="lg">
+            <div className="mb-1 flex items-center gap-2">
+              <CalendarDays className="h-4 w-4 text-accent" />
+              <h3 className="text-sm font-semibold">Monthly returns</h3>
+            </div>
+            <p className="mb-3 text-xs text-muted">
+              % return per month, relative to starting balance {formatCurrency(startingBalance)}
+            </p>
+            <MonthlyMatrix rows={monthlyMatrix} />
+          </Card>
+
+          <Card padding="lg">
+            <h3 className="mb-3 text-sm font-semibold">Performance by weekday</h3>
+            <WeekdayBars data={weekdayData} />
+          </Card>
         </div>
       )}
 

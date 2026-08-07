@@ -19,13 +19,18 @@ export const metadata: Metadata = {
 };
 
 // Applied before paint to avoid a flash of the wrong theme.
+// localStorage['moblog-theme'] holds 'light' | 'dark' | 'system' (old
+// installs may only ever have stored 'light'/'dark' explicitly, which stay
+// valid members of this set — no migration needed).
 const themeInitScript = `
 (function () {
   try {
     var stored = localStorage.getItem('moblog-theme');
+    var mode = stored === 'light' || stored === 'dark' ? stored : 'system';
     var prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-    var dark = stored ? stored === 'dark' : prefersDark;
+    var dark = mode === 'system' ? prefersDark : mode === 'dark';
     if (dark) document.documentElement.classList.add('dark');
+    document.documentElement.setAttribute('data-theme-mode', mode);
   } catch (e) {}
 })();
 `;

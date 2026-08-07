@@ -7,8 +7,15 @@ import { useSelectedAccount } from "@/components/AccountContext";
 import { useModal } from "@/components/ModalContext";
 import JournalTable from "@/components/JournalTable";
 import CustomSelect from "@/components/CustomSelect";
+import Card from "@/components/ui/Card";
+import PageHeader from "@/components/ui/PageHeader";
+import FilterBar from "@/components/ui/FilterBar";
+import Skeleton from "@/components/ui/Skeleton";
 import { cn, isClosed } from "@/lib/utils";
 import type { Trade } from "@/lib/types";
+
+type Direction = "ALL" | "LONG" | "SHORT";
+type Status = "ALL" | "OPEN" | "CLOSED";
 
 export default function JournalPage() {
   const { accounts, trades, loading, error } = useData();
@@ -17,8 +24,8 @@ export default function JournalPage() {
   const { openEdit, openAdd } = useModal();
 
   const [search, setSearch] = useState("");
-  const [direction, setDirection] = useState<"ALL" | "LONG" | "SHORT">("ALL");
-  const [status, setStatus] = useState<"ALL" | "OPEN" | "CLOSED">("ALL");
+  const [direction, setDirection] = useState<Direction>("ALL");
+  const [status, setStatus] = useState<Status>("ALL");
   const [setup, setSetup] = useState("");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
@@ -75,14 +82,10 @@ export default function JournalPage() {
 
   return (
     <div>
-      <div className="mb-6 flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-semibold tracking-tight">Trades</h1>
-          <p className="mt-0.5 text-sm text-muted">
-            {selectedAccount ? selectedAccount.name : "Loading accounts..."}
-          </p>
-        </div>
-      </div>
+      <PageHeader
+        title="Trades"
+        subtitle={selectedAccount ? selectedAccount.name : "Loading accounts..."}
+      />
 
       {error && (
         <div className="mb-5 flex items-start gap-2 rounded-xl border border-loss/30 bg-loss-soft px-4 py-3 text-sm text-loss">
@@ -91,67 +94,14 @@ export default function JournalPage() {
         </div>
       )}
 
-      {/* Filters */}
-      <div className="mb-4 rounded-2xl border border-border bg-card p-4">
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="relative flex-1 min-w-[180px]">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
-            <input
-              value={search}
-              onChange={(e) => {
-                setSearch(e.target.value);
-                setPage(1);
-              }}
-              placeholder="Search pair, setup, comment, exit logic..."
-              className="input pl-9"
-            />
-            {search && (
-              <button
-                type="button"
-                onClick={() => {
-                  setSearch("");
-                  setPage(1);
-                }}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted hover:text-foreground"
-              >
-                <X className="h-3.5 w-3.5" />
-              </button>
-            )}
-          </div>
-
-          <CustomSelect
-            value={selectedAccount?.id || ""}
-            onChange={(v) => {
-              setSelectedAccountId(v || null);
-              setPage(1);
-            }}
-            options={[
-              { value: "", label: "All accounts" },
-              ...accounts.map((a) => ({ value: a.id, label: a.name })),
-            ]}
-            className="w-40"
-          />
-
-          <button
-            type="button"
-            onClick={() => setShowFilters((s) => !s)}
-            className={cn(
-              "inline-flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm font-medium transition-colors",
-              showFilters
-                ? "bg-surface-2 text-foreground"
-                : "text-muted hover:bg-surface-2 hover:text-foreground",
-            )}
-          >
-            <SlidersHorizontal className="h-4 w-4" /> Filters
-          </button>
-        </div>
-
-        {showFilters && (
-          <div className="mt-3 grid grid-cols-1 gap-3 border-t border-border pt-3 sm:grid-cols-2 lg:grid-cols-4">
+      <FilterBar
+        expanded={showFilters}
+        expandedContent={
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <CustomSelect
               value={direction}
               onChange={(v) => {
-                setDirection(v as any);
+                setDirection(v as Direction);
                 setPage(1);
               }}
               options={[
@@ -163,7 +113,7 @@ export default function JournalPage() {
             <CustomSelect
               value={status}
               onChange={(v) => {
-                setStatus(v as any);
+                setStatus(v as Status);
                 setPage(1);
               }}
               options={[
@@ -206,11 +156,62 @@ export default function JournalPage() {
               />
             </div>
           </div>
-        )}
-      </div>
+        }
+      >
+        <div className="relative min-w-[180px] flex-1">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
+          <input
+            value={search}
+            onChange={(e) => {
+              setSearch(e.target.value);
+              setPage(1);
+            }}
+            placeholder="Search pair, setup, comment, exit logic..."
+            className="input pl-9"
+          />
+          {search && (
+            <button
+              type="button"
+              onClick={() => {
+                setSearch("");
+                setPage(1);
+              }}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted hover:text-foreground"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          )}
+        </div>
+
+        <CustomSelect
+          value={selectedAccount?.id || ""}
+          onChange={(v) => {
+            setSelectedAccountId(v || null);
+            setPage(1);
+          }}
+          options={[
+            { value: "", label: "All accounts" },
+            ...accounts.map((a) => ({ value: a.id, label: a.name })),
+          ]}
+          className="w-40"
+        />
+
+        <button
+          type="button"
+          onClick={() => setShowFilters((s) => !s)}
+          className={cn(
+            "inline-flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm font-medium transition-colors",
+            showFilters
+              ? "bg-surface-2 text-foreground"
+              : "text-muted hover:bg-surface-2 hover:text-foreground",
+          )}
+        >
+          <SlidersHorizontal className="h-4 w-4" /> Filters
+        </button>
+      </FilterBar>
 
       {loading ? (
-        <div className="h-64 animate-pulse rounded-2xl border border-border bg-card" />
+        <Skeleton className="h-64" />
       ) : (
         <>
           <JournalTable
@@ -221,7 +222,7 @@ export default function JournalPage() {
           />
 
           {filteredTrades.length > PAGE_SIZE && (
-            <div className="mt-4 flex items-center justify-between rounded-2xl border border-border bg-card px-4 py-3 text-sm">
+            <Card padding="sm" className="mt-4 flex items-center justify-between text-sm">
               <span className="text-muted">
                 Showing {pagedTrades.length} of {filteredTrades.length} trades
               </span>
@@ -246,7 +247,7 @@ export default function JournalPage() {
                   Next
                 </button>
               </div>
-            </div>
+            </Card>
           )}
         </>
       )}

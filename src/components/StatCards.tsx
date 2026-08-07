@@ -5,74 +5,56 @@ import {
   Gauge,
   Percent,
   Scale,
-  Wallet,
-  TrendingUp,
+  Sparkles,
   Target,
-  BarChart2,
+  Timer,
+  TrendingDown,
+  TrendingUp,
+  Wallet,
 } from "lucide-react";
-import type { Stats } from "@/lib/types";
+import type { Stats, Trade } from "@/lib/types";
 import {
   cn,
   formatCurrency,
   formatPercent,
-  formatSignedCurrency,
   formatR,
+  formatSignedCurrency,
   formatSignedPercent,
 } from "@/lib/utils";
+import { computeConsistencyScore, computeDrawdown, computeTradeDurations } from "@/lib/analytics";
+import StatTile from "./ui/StatTile";
 
 function WinRateBar({ wins, losses }: { wins: number; losses: number }) {
   const total = wins + losses;
   const winPct = total ? (wins / total) * 100 : 0;
   return (
     <div className="mt-3 flex h-1.5 w-full overflow-hidden rounded-full bg-border">
-      <div className="h-full bg-profit" style={{ width: `${winPct}%` }} />
-      <div className="h-full bg-loss" style={{ width: `${100 - winPct}%` }} />
+      <div className="h-full bg-profit transition-all duration-500" style={{ width: `${winPct}%` }} />
+      <div className="h-full bg-loss transition-all duration-500" style={{ width: `${100 - winPct}%` }} />
     </div>
   );
 }
 
-function Card({
-  label,
-  icon: Icon,
-  accent,
-  children,
+export default function StatCards({
+  stats,
+  trades,
+  startingBalance,
 }: {
-  label: string;
-  icon: React.ElementType;
-  accent?: "profit" | "loss" | "muted";
-  children: React.ReactNode;
+  stats: Stats;
+  trades: Trade[];
+  startingBalance: number;
 }) {
-  const accentClass =
-    accent === "profit"
-      ? "text-profit"
-      : accent === "loss"
-      ? "text-loss"
-      : "text-muted";
-
-  return (
-    <div className="group relative overflow-hidden rounded-2xl border border-border bg-card p-4 shadow-sm transition-all hover:border-border/80 hover:shadow-md sm:p-5">
-      <div className="absolute right-0 top-0 h-24 w-24 -translate-y-1/2 translate-x-1/2 rounded-full bg-accent/5 opacity-0 transition-opacity group-hover:opacity-100" />
-      <div className="relative">
-        <div className="flex items-center justify-between gap-2">
-          <span className="truncate text-xs font-medium uppercase tracking-wide text-muted">
-            {label}
-          </span>
-          <Icon className={cn("h-4 w-4 shrink-0", accentClass)} />
-        </div>
-        {children}
-      </div>
-    </div>
-  );
-}
-
-export default function StatCards({ stats }: { stats: Stats }) {
   const pnlPositive = stats.netPnl >= 0;
   const profitFactorDisplay =
     stats.profitFactor === Infinity ? "∞" : stats.profitFactor.toFixed(2);
 
+  const drawdown = computeDrawdown(trades, startingBalance);
+  const duration = computeTradeDurations(trades);
+  const consistency = computeConsistencyScore(trades);
+
   return (
-    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-7">
-      <Card label="Balance" icon={Wallet} accent="muted">
+    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-10">
+      <StatTile label="Balance" icon={Wallet} accent="muted">
         <div className="mt-2 min-w-0 truncate text-xl font-semibold tracking-tight tabular-nums">
           {formatCurrency(stats.currentBalance)}
         </div>
@@ -83,9 +65,9 @@ export default function StatCards({ stats }: { stats: Stats }) {
           <span>·</span>
           <span>{formatSignedPercent(stats.returnPct)}</span>
         </p>
-      </Card>
+      </StatTile>
 
-      <Card label="Net P&L" icon={TrendingUp} accent={pnlPositive ? "profit" : "loss"}>
+      <StatTile label="Net P&L" icon={TrendingUp} accent={pnlPositive ? "profit" : "loss"}>
         <div
           className={cn(
             "mt-2 min-w-0 truncate text-xl font-semibold tracking-tight tabular-nums",
@@ -95,41 +77,41 @@ export default function StatCards({ stats }: { stats: Stats }) {
           {formatSignedCurrency(stats.netPnl)}
         </div>
         <p className="mt-1 truncate text-xs text-muted">{stats.closedTrades} closed</p>
-      </Card>
+      </StatTile>
 
-      <Card label="Win rate" icon={Percent} accent="muted">
+      <StatTile label="Win rate" icon={Percent} accent="muted">
         <div className="mt-2 min-w-0 truncate text-xl font-semibold tracking-tight tabular-nums">
           {formatPercent(stats.winRate)}
         </div>
         <WinRateBar wins={stats.wins} losses={stats.losses} />
-      </Card>
+      </StatTile>
 
-      <Card label="Profit factor" icon={Gauge} accent="muted">
+      <StatTile label="Profit factor" icon={Gauge} accent="muted">
         <div className="mt-2 min-w-0 truncate text-xl font-semibold tracking-tight tabular-nums">
           {profitFactorDisplay}
         </div>
         <p className="mt-1 truncate text-xs text-muted">
           {stats.wins}W · {stats.losses}L
         </p>
-      </Card>
+      </StatTile>
 
-      <Card label="Avg R:R" icon={Target} accent="muted">
+      <StatTile label="Avg R:R" icon={Target} accent="muted">
         <div className="mt-2 min-w-0 truncate text-xl font-semibold tracking-tight tabular-nums">
           {formatR(stats.avgRr)}
         </div>
         <p className="mt-1 truncate text-xs text-muted">total {formatR(stats.totalR)}</p>
-      </Card>
+      </StatTile>
 
-      <Card label="Avg win / loss" icon={Scale} accent="muted">
+      <StatTile label="Avg win / loss" icon={Scale} accent="muted">
         <div className="mt-2 flex min-w-0 flex-wrap items-baseline gap-1 text-base font-semibold tracking-tight tabular-nums">
           <span className="text-profit">{formatCurrency(stats.avgWin)}</span>
           <span className="text-xs font-normal text-muted">/</span>
           <span className="text-loss">{formatCurrency(stats.avgLoss)}</span>
         </div>
         <p className="mt-1 truncate text-xs text-muted">per trade</p>
-      </Card>
+      </StatTile>
 
-      <Card label="Expectancy" icon={Activity} accent={stats.expectancy >= 0 ? "profit" : "loss"}>
+      <StatTile label="Expectancy" icon={Activity} accent={stats.expectancy >= 0 ? "profit" : "loss"}>
         <div
           className={cn(
             "mt-2 min-w-0 truncate text-xl font-semibold tracking-tight tabular-nums",
@@ -139,7 +121,35 @@ export default function StatCards({ stats }: { stats: Stats }) {
           {formatSignedCurrency(stats.expectancy)}
         </div>
         <p className="mt-1 truncate text-xs text-muted">avg per trade</p>
-      </Card>
+      </StatTile>
+
+      <StatTile label="Max drawdown" icon={TrendingDown} accent={drawdown.maxDrawdown > 0 ? "loss" : "muted"}>
+        <div className="mt-2 min-w-0 truncate text-xl font-semibold tracking-tight tabular-nums text-loss">
+          {formatCurrency(drawdown.maxDrawdown)}
+        </div>
+        <p className="mt-1 truncate text-xs text-muted">{drawdown.maxDrawdownPct.toFixed(1)}% from peak</p>
+      </StatTile>
+
+      <StatTile label="Avg duration" icon={Timer} accent="muted">
+        <div className="mt-2 min-w-0 truncate text-xl font-semibold tracking-tight tabular-nums">
+          {duration.avgDurationLabel}
+        </div>
+        <p className="mt-1 truncate text-xs text-muted">{duration.count} closed trades</p>
+      </StatTile>
+
+      <StatTile
+        label="Consistency"
+        icon={Sparkles}
+        accent={consistency.score >= 60 ? "profit" : consistency.score >= 30 ? "warning" : "loss"}
+      >
+        <div className="mt-2 min-w-0 truncate text-xl font-semibold tracking-tight tabular-nums">
+          {Math.round(consistency.score)}
+          <span className="text-sm font-normal text-muted">/100</span>
+        </div>
+        <p className="mt-1 truncate text-xs text-muted">
+          {formatPercent(consistency.profitableDaysPct, 0)} profitable days
+        </p>
+      </StatTile>
     </div>
   );
 }

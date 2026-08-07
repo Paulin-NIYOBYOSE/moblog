@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useToast } from "@/components/ToastContext";
-import type { Account, AccountInput, Trade, TradeInput } from "./types";
+import type { Account, AccountInput, Trade, TradeInput, Content, ContentInput } from "./types";
 
 async function parseError(res: Response): Promise<string> {
   try {
@@ -16,6 +16,7 @@ async function parseError(res: Response): Promise<string> {
 export function useData() {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [trades, setTrades] = useState<Trade[]>([]);
+  const [content, setContent] = useState<Content[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const toast = useToast();
@@ -33,11 +34,18 @@ export function useData() {
     setTrades(await res.json());
   }, []);
 
+  const refreshContent = useCallback(async () => {
+    const res = await fetch("/api/content", { cache: "no-store" });
+    if (!res.ok) throw new Error(await parseError(res));
+    setContent(await res.json());
+  }, []);
+
   const refresh = useCallback(async (accountId?: string | null) => {
     try {
       setError(null);
       await refreshAccounts();
       await refreshTrades(accountId);
+      await refreshContent();
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Failed to load data";
       setError(msg);
@@ -45,7 +53,7 @@ export function useData() {
     } finally {
       setLoading(false);
     }
-  }, [refreshAccounts, refreshTrades, toast]);
+  }, [refreshAccounts, refreshTrades, refreshContent, toast]);
 
   useEffect(() => {
     refresh();
@@ -172,19 +180,86 @@ export function useData() {
     [refreshTrades, toast],
   );
 
+  const createContent = useCallback(
+    async (input: ContentInput) => {
+      const toastId = toast.loading("Creating content...");
+      try {
+        const res = await fetch("/api/content", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(input),
+        });
+        if (!res.ok) throw new Error(await parseError(res));
+        await refreshContent();
+        toast.success("Content created");
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : "Failed to create content");
+        throw e;
+      } finally {
+        toast.remove(toastId);
+      }
+    },
+    [refreshContent, toast],
+  );
+
+  const updateContent = useCallback(
+    async (id: string, input: ContentInput) => {
+      const toastId = toast.loading("Updating content...");
+      try {
+        const res = await fetch(`/api/content/${id}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(input),
+        });
+        if (!res.ok) throw new Error(await parseError(res));
+        await refreshContent();
+        toast.success("Content updated");
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : "Failed to update content");
+        throw e;
+      } finally {
+        toast.remove(toastId);
+      }
+    },
+    [refreshContent, toast],
+  );
+
+  const deleteContent = useCallback(
+    async (id: string) => {
+      const toastId = toast.loading("Deleting content...");
+      try {
+        const res = await fetch(`/api/content/${id}`, { method: "DELETE" });
+        if (!res.ok) throw new Error(await parseError(res));
+        await refreshContent();
+        toast.success("Content deleted");
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : "Failed to delete content");
+        throw e;
+      } finally {
+        toast.remove(toastId);
+      }
+    },
+    [refreshContent, toast],
+  );
+
   return {
     accounts,
     trades,
+    content,
     loading,
     error,
     refresh,
     refreshTrades,
+    refreshContent,
     createAccount,
     updateAccount,
     deleteAccount,
     createTrade,
     updateTrade,
     deleteTrade,
+    createContent,
+    updateContent,
+    deleteContent,
   };
 }
 

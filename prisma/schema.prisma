@@ -15,6 +15,34 @@ enum Direction {
   SHORT
 }
 
+enum ContentStatus {
+  IDEA
+  DRAFT
+  READY
+  PUBLISHED
+  ARCHIVED
+}
+
+enum Platform {
+  INSTAGRAM
+  TIKTOK
+  YOUTUBE
+  X
+  LINKEDIN
+  TWITCH
+}
+
+enum ContentType {
+  SHORT
+  LIVE_STREAM
+  PHOTOS
+  TEXT_STORY
+  REEL
+  POST
+  THREAD
+  VIDEO
+}
+
 // A trading account (e.g. a prop-firm challenge, live broker, demo).
 model Account {
   id              String   @id @default(cuid())
@@ -66,4 +94,25 @@ model Trade {
 
   @@index([accountId, openDate])
   @@index([accountId, closeDate])
+}
+
+// Content management for social media posts and ideas
+model Content {
+  id          String        @id @default(cuid())
+  title       String
+  status      ContentStatus @default(IDEA)
+  platforms   Platform[]
+  publishDate DateTime?
+  type        ContentType
+  url         String?
+  visuals     String?
+  nextStatus  String?
+  notes       String?
+  topics      String[]
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  @@index([status])
+  @@index([publishDate])
+  @@index([type])
 }

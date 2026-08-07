@@ -11,6 +11,9 @@ import EquityCurve from "@/components/EquityCurve";
 import MonthlyChart from "@/components/MonthlyChart";
 import OpenPositions from "@/components/OpenPositions";
 import JournalTable from "@/components/JournalTable";
+import Card from "@/components/ui/Card";
+import PageHeader from "@/components/ui/PageHeader";
+import Skeleton from "@/components/ui/Skeleton";
 import {
   computeStats,
   formatCurrency,
@@ -29,38 +32,37 @@ export default function DashboardPage() {
         : trades,
     [trades, selectedAccount],
   );
+  const startingBalance = selectedAccount?.startingBalance ?? 0;
   const stats = useMemo(
-    () => computeStats(filteredTrades, selectedAccount?.startingBalance ?? 0),
-    [filteredTrades, selectedAccount],
+    () => computeStats(filteredTrades, startingBalance),
+    [filteredTrades, startingBalance],
   );
 
   const recentTrades = filteredTrades.slice(0, 5);
 
   return (
     <div>
-      <div className="mb-6 flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-semibold tracking-tight">Dashboard</h1>
-          <p className="mt-0.5 text-sm text-muted">
-            {selectedAccount ? selectedAccount.name : "Loading accounts..."}
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => openAdd()}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-3 py-2 text-sm font-medium text-accent-foreground"
-          >
-            <Plus className="h-4 w-4" /> Add trade
-          </button>
-          <Link
-            href="/journal"
-            className="inline-flex items-center gap-1.5 text-sm font-medium text-muted transition-colors hover:text-foreground"
-          >
-            View all trades <ArrowRight className="h-4 w-4" />
-          </Link>
-        </div>
-      </div>
+      <PageHeader
+        title="Dashboard"
+        subtitle={selectedAccount ? selectedAccount.name : "Loading accounts..."}
+        actions={
+          <>
+            <button
+              type="button"
+              onClick={() => openAdd()}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-3 py-2 text-sm font-medium text-accent-foreground shadow-sm transition-transform active:scale-[0.98]"
+            >
+              <Plus className="h-4 w-4" /> Add trade
+            </button>
+            <Link
+              href="/journal"
+              className="inline-flex items-center gap-1.5 text-sm font-medium text-muted transition-colors hover:text-foreground"
+            >
+              View all trades <ArrowRight className="h-4 w-4" />
+            </Link>
+          </>
+        }
+      />
 
       {error && (
         <div className="mb-5 flex items-start gap-2 rounded-xl border border-loss/30 bg-loss-soft px-4 py-3 text-sm text-loss">
@@ -73,18 +75,15 @@ export default function DashboardPage() {
         <LoadingState />
       ) : (
         <div className="space-y-5">
-          <StatCards stats={stats} />
+          <StatCards stats={stats} trades={filteredTrades} startingBalance={startingBalance} />
 
           <div className="grid grid-cols-1 gap-5">
-            <EquityCurve
-              trades={filteredTrades}
-              startingBalance={selectedAccount?.startingBalance ?? 0}
-            />
+            <EquityCurve trades={filteredTrades} startingBalance={startingBalance} />
             <MonthlyChart trades={filteredTrades} />
           </div>
 
           <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
-            <div className="rounded-2xl border border-border bg-card p-5 lg:col-span-1">
+            <Card padding="lg" className="lg:col-span-1">
               <div className="mb-3 flex items-center gap-2">
                 <TrendingUp className="h-4 w-4 text-accent" />
                 <h3 className="text-sm font-semibold">Quick summary</h3>
@@ -93,7 +92,7 @@ export default function DashboardPage() {
                 <div className="flex items-center justify-between border-b border-border pb-2">
                   <span className="text-muted">Starting balance</span>
                   <span className="font-medium tabular-nums">
-                    {formatCurrency(selectedAccount?.startingBalance ?? 0)}
+                    {formatCurrency(startingBalance)}
                   </span>
                 </div>
                 <div className="flex items-center justify-between border-b border-border pb-2">
@@ -145,7 +144,7 @@ export default function DashboardPage() {
                   Analytics
                 </Link>
               </div>
-            </div>
+            </Card>
             <div className="lg:col-span-2">
               <OpenPositions trades={filteredTrades} onEdit={openEdit} />
             </div>
@@ -166,7 +165,7 @@ export default function DashboardPage() {
             ) : (
               <JournalTable
                 trades={recentTrades}
-                startingBalance={selectedAccount?.startingBalance ?? 0}
+                startingBalance={startingBalance}
                 onEdit={openEdit}
                 onAdd={() => openAdd()}
               />
@@ -181,17 +180,14 @@ export default function DashboardPage() {
 function LoadingState() {
   return (
     <div className="space-y-5">
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        {Array.from({ length: 4 }).map((_, i) => (
-          <div
-            key={i}
-            className="h-28 animate-pulse rounded-2xl border border-border bg-card"
-          />
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
+        {Array.from({ length: 5 }).map((_, i) => (
+          <Skeleton key={i} className="h-28" />
         ))}
       </div>
       <div className="grid grid-cols-1 gap-5">
-        <div className="h-[220px] animate-pulse rounded-2xl border border-border bg-card" />
-        <div className="h-[220px] animate-pulse rounded-2xl border border-border bg-card" />
+        <Skeleton className="h-[280px]" />
+        <Skeleton className="h-[320px]" />
       </div>
     </div>
   );

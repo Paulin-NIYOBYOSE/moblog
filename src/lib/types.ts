@@ -1,5 +1,11 @@
 export type Direction = "LONG" | "SHORT";
 
+export type ContentStatus = "IDEA" | "DRAFT" | "READY" | "PUBLISHED" | "ARCHIVED";
+
+export type Platform = "INSTAGRAM" | "TIKTOK" | "YOUTUBE" | "X" | "LINKEDIN" | "TWITCH";
+
+export type ContentType = "SHORT" | "LIVE_STREAM" | "PHOTOS" | "TEXT_STORY" | "REEL" | "POST" | "THREAD" | "VIDEO";
+
 export interface Account {
   id: string;
   name: string;
@@ -110,4 +116,129 @@ export interface MonthAggregate {
 // A trade with its running account balance attached (after the trade closed).
 export interface TradeWithBalance extends Trade {
   balance: number;
+}
+
+export interface Content {
+  id: string;
+  title: string;
+  status: ContentStatus;
+  platforms: Platform[];
+  publishDate: string | null;
+  type: ContentType;
+  url: string | null;
+  visuals: string | null;
+  nextStatus: string | null;
+  notes: string | null;
+  topics: string[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ContentInput {
+  title: string;
+  status: ContentStatus;
+  platforms: Platform[];
+  publishDate?: string | null;
+  type: ContentType;
+  url?: string | null;
+  visuals?: string | null;
+  nextStatus?: string | null;
+  notes?: string | null;
+  topics: string[];
+}
+
+// ---------------------------------------------------------------------------
+// Extended analytics (src/lib/analytics.ts) — additive, built on top of the
+// existing Trade/Stats shapes above. Never used to redefine "closed" or
+// "effective date" semantics, which stay owned by utils.ts.
+// ---------------------------------------------------------------------------
+
+export interface BreakdownEntry {
+  key: string;
+  label: string;
+  pnl: number;
+  trades: number;
+  wins: number;
+  winRate: number;
+  avgR: number | null;
+}
+
+export interface WeekdayAggregate {
+  weekday: number; // 0 = Sunday .. 6 = Saturday
+  label: string;
+  pnl: number;
+  trades: number;
+  wins: number;
+  winRate: number;
+}
+
+export interface YearAggregate {
+  year: string;
+  pnl: number;
+  trades: number;
+  wins: number;
+}
+
+export interface DrawdownPoint {
+  date: string;
+  equity: number;
+  peak: number;
+  drawdown: number; // <= 0, in account currency
+  drawdownPct: number; // <= 0, percent of peak
+}
+
+export interface DrawdownStats {
+  maxDrawdown: number; // magnitude, >= 0
+  maxDrawdownPct: number; // magnitude, >= 0
+  currentDrawdown: number; // magnitude, >= 0
+  currentDrawdownPct: number; // magnitude, >= 0
+  longestDrawdownDays: number;
+  series: DrawdownPoint[];
+}
+
+export interface DurationStats {
+  count: number;
+  avgDurationMs: number;
+  avgDurationLabel: string;
+  medianDurationMs: number;
+  medianDurationLabel: string;
+  avgWinnerDurationMs: number;
+  avgLoserDurationMs: number;
+}
+
+export interface RMultipleBucket {
+  bucket: string;
+  min: number;
+  max: number;
+  count: number;
+  pnl: number;
+}
+
+export interface ConsistencyScore {
+  score: number; // 0-100, higher = more evenly distributed profits
+  topDayContributionPct: number;
+  fairSharePct: number;
+  profitableDaysPct: number;
+}
+
+export interface PeriodComparison {
+  current: Stats;
+  previous: Stats;
+  deltaNetPnl: number;
+  deltaWinRate: number;
+  deltaProfitFactor: number;
+  deltaExpectancy: number;
+}
+
+export interface MonthlyMatrixCell {
+  pnl: number;
+  returnPct: number; // relative to the account's startingBalance
+  trades: number;
+}
+
+export interface MonthlyMatrixRow {
+  year: string;
+  months: (MonthlyMatrixCell | null)[]; // 12 entries, Jan (0) .. Dec (11); null = no closed trades that month
+  yearPnl: number;
+  yearReturnPct: number;
 }

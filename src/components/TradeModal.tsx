@@ -9,6 +9,7 @@ import {
   TrendingUp,
   X,
 } from "lucide-react";
+import { AnimatePresence, motion } from "motion/react";
 import type { Account, Direction, Trade, TradeInput } from "@/lib/types";
 import { cn, todayKey } from "@/lib/utils";
 import CustomSelect from "./CustomSelect";
@@ -122,8 +123,6 @@ export default function TradeModal({
     return () => window.removeEventListener("keydown", onKey);
   }, [open, onClose]);
 
-  if (!open) return null;
-
   function set(key: string, value: string) {
     setForm((f) => ({ ...f, [key]: value }));
   }
@@ -204,12 +203,24 @@ export default function TradeModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center">
-      <div
-        className="absolute inset-0 bg-black/50 backdrop-blur-sm animate-fade-in"
-        onClick={onClose}
-      />
-      <div className="relative z-10 flex h-[90vh] w-full max-w-2xl flex-col animate-pop-in rounded-t-2xl border border-border bg-card shadow-2xl sm:h-auto sm:rounded-2xl">
+    <AnimatePresence>
+      {open && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center">
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+            onClick={onClose}
+          />
+          <motion.div
+            initial={{ opacity: 0, y: 24, scale: 0.98 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 24, scale: 0.98 }}
+            transition={{ type: "spring", damping: 28, stiffness: 340 }}
+            className="relative z-10 flex h-[90vh] w-full max-w-2xl flex-col rounded-t-2xl border border-border bg-card shadow-2xl sm:h-auto sm:rounded-2xl"
+          >
         <div className="flex items-center justify-between border-b border-border px-5 py-4">
           <h2 className="text-base font-semibold">
             {isEdit ? "Edit trade" : "Add trade"}
@@ -540,8 +551,10 @@ export default function TradeModal({
             </button>
           </div>
         </form>
-      </div>
-    </div>
+          </motion.div>
+        </div>
+      )}
+    </AnimatePresence>
   );
 }
 

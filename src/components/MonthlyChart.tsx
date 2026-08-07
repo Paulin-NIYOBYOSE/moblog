@@ -1,16 +1,45 @@
 "use client";
 
-import { useEffect, useId, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { BarChart2 } from "lucide-react";
-import type { Trade } from "@/lib/types";
 import {
-  aggregateByMonth,
-  cn,
-  formatCurrency,
-  formatSignedCurrency,
-  MONTHS,
-} from "@/lib/utils";
+  Bar,
+  BarChart,
+  Cell,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
+import type { CategoricalChartFunc } from "recharts/types/chart/types";
+import type { Trade } from "@/lib/types";
+import { aggregateByMonth, cn, formatCurrency, formatSignedCurrency, MONTHS } from "@/lib/utils";
+import Card from "./ui/Card";
+
+function MonthlyTooltip({
+  active,
+  payload,
+}: {
+  active?: boolean;
+  payload?: { payload: { fullLabel: string; pnl: number; trades: number } }[];
+}) {
+  if (!active || !payload?.length) return null;
+  const d = payload[0].payload;
+  return (
+    <div className="rounded-lg border border-border bg-card px-3 py-2 text-xs shadow-lg">
+      <div className="font-medium">{d.fullLabel}</div>
+      <div
+        className="tabular-nums"
+        style={{ color: d.pnl >= 0 ? "var(--profit)" : "var(--loss)" }}
+      >
+        {formatSignedCurrency(d.pnl)}
+      </div>
+      <div className="text-[10px] text-muted">
+        {d.trades > 0 ? `${d.trades} trade${d.trades === 1 ? "" : "s"}` : "No trading activity"}
+      </div>
+    </div>
+  );
+}
 
 export default function MonthlyChart({
   trades,
@@ -20,11 +49,6 @@ export default function MonthlyChart({
   year?: number;
 }) {
   const router = useRouter();
-  const svgRef = useRef<SVGSVGElement>(null);
-  const [hover, setHover] = useState<number | null>(null);
-  const [mounted, setMounted] = useState(false);
-  const gradientId = useId();
-
   const byMonth = aggregateByMonth(trades);
   const map = new Map(byMonth.map((m) => [m.month, m]));
 
@@ -40,30 +64,18 @@ export default function MonthlyChart({
     };
   });
 
-  const maxAbs = Math.max(1, ...data.map((d) => Math.abs(d.pnl)));
   const total = data.reduce((sum, d) => sum + d.pnl, 0);
   const activeMonths = data.filter((d) => d.trades > 0).length;
 
-  const dataKey = data.map((d) => d.pnl).join(",");
-  useEffect(() => {
-    setMounted(false);
-    const t = setTimeout(() => setMounted(true), 30);
-    return () => clearTimeout(t);
-  }, [dataKey]);
-
-  const W = 900;
-  const H = 320;
-  const pad = { top: 24, right: 16, bottom: 40, left: 56 };
-  const chartW = W - pad.left - pad.right;
-  const chartH = H - pad.top - pad.bottom;
-  const n = data.length;
-  const barW = (chartW / n) * 0.55;
-  const zeroY = pad.top + chartH / 2;
-
-  const yFor = (pnl: number) => zeroY - (pnl / maxAbs) * (chartH / 2);
+  const handleClick: CategoricalChartFunc = (state) => {
+    const idx = state?.activeIndex;
+    if (typeof idx === "number" && data[idx]) {
+      router.push(`/analytics?month=${data[idx].key}`);
+    }
+  };
 
   return (
-    <div className="rounded-2xl border border-border bg-card p-5">
+    <Card padding="lg">
       <div className="flex items-start justify-between">
         <div>
           <div className="flex items-center gap-2">
@@ -89,162 +101,35 @@ export default function MonthlyChart({
         </div>
       </div>
 
-      <div className="mt-5 w-full overflow-hidden animate-fade-in">
-        <svg
-          ref={svgRef}
-          viewBox={`0 0 ${W} ${H}`}
-          className="h-72 w-full"
-          preserveAspectRatio="xMidYMid meet"
-        >
-          <defs>
-            <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="var(--profit)" stopOpacity="0.9" />
-              <stop offset="100%" stopColor="var(--profit)" stopOpacity="0.5" />
-            </linearGradient>
-          </defs>
-
-          {/* Grid lines and labels */}
-          {[0, 0.5, 1].map((t, i) => {
-            const y = pad.top + chartH * t;
-            const value = maxAbs * (1 - t * 2);
-            return (
-              <g key={i}>
-                <line
-                  x1={pad.left}
-                  y1={y}
-                  x2={W - pad.right}
-                  y2={y}
-                  stroke="var(--border)"
-                  strokeDasharray="4 4"
+      <div className="mt-5 h-72 w-full">
+        <ResponsiveContainer width="100%" height="100%">
+          <BarChart data={data} margin={{ top: 8, right: 4, left: 4, bottom: 0 }} onClick={handleClick}>
+            <XAxis
+              dataKey="label"
+              axisLine={{ stroke: "var(--chart-axis)" }}
+              tickLine={false}
+              tick={{ fill: "var(--muted)", fontSize: 11 }}
+            />
+            <YAxis
+              tickFormatter={(v) => formatCurrency(v, { compact: true })}
+              axisLine={false}
+              tickLine={false}
+              tick={{ fill: "var(--muted)", fontSize: 11 }}
+              width={56}
+            />
+            <Tooltip content={<MonthlyTooltip />} cursor={{ fill: "var(--surface-2)" }} />
+            <Bar dataKey="pnl" radius={[4, 4, 4, 4]} isAnimationActive animationDuration={500} className="cursor-pointer">
+              {data.map((d) => (
+                <Cell
+                  key={d.key}
+                  fill={d.trades === 0 ? "var(--border)" : d.pnl >= 0 ? "var(--profit)" : "var(--loss)"}
+                  fillOpacity={d.trades === 0 ? 0.5 : 0.9}
                 />
-                <text
-                  x={pad.left - 8}
-                  y={y + 4}
-                  textAnchor="end"
-                  className="fill-muted text-[11px]"
-                >
-                  {formatCurrency(value, { compact: true })}
-                </text>
-              </g>
-            );
-          })}
-
-          {/* Zero line */}
-          <line
-            x1={pad.left}
-            y1={zeroY}
-            x2={W - pad.right}
-            y2={zeroY}
-            stroke="var(--muted)"
-            strokeWidth={1}
-          />
-
-          {/* Bars */}
-          {data.map((d, i) => {
-            const x = pad.left + (i + 0.5) * (chartW / n) - barW / 2;
-            const y = yFor(d.pnl);
-            const height = Math.max(4, Math.abs(zeroY - y));
-            const positive = d.pnl >= 0;
-            const hasData = d.trades > 0;
-            const isHover = hover === i;
-            const barY = d.pnl === 0 ? zeroY - 2 : Math.min(y, zeroY);
-            return (
-              <g
-                key={d.key}
-                className="cursor-pointer"
-                onMouseEnter={() => setHover(i)}
-                onMouseLeave={() => setHover(null)}
-                onClick={() => router.push(`/analytics?month=${d.key}`)}
-              >
-                <rect
-                  x={x}
-                  y={barY}
-                  width={barW}
-                  height={height}
-                  rx={4}
-                  fill={
-                    hasData
-                      ? positive
-                        ? `url(#${gradientId})`
-                        : "var(--loss)"
-                      : "var(--muted)"
-                  }
-                  opacity={isHover ? 1 : hasData ? 0.9 : 0.35}
-                  className={cn(
-                    "transition-all duration-200 ease-out",
-                    hasData && mounted
-                      ? positive
-                        ? "animate-grow-bar"
-                        : "animate-grow-bar-down"
-                      : "",
-                  )}
-                  style={{
-                    animationDelay: hasData ? `${i * 60}ms` : "0ms",
-                    filter: isHover ? "brightness(1.15)" : "brightness(1)",
-                    transition: "opacity 200ms ease-out, filter 200ms ease-out",
-                  }}
-                />
-                {hasData && height > 18 && (
-                  <text
-                    x={x + barW / 2}
-                    y={
-                      positive
-                        ? Math.min(y, zeroY) + 14
-                        : Math.max(y, zeroY) - 6
-                    }
-                    textAnchor="middle"
-                    className="fill-white text-[11px] font-medium"
-                  >
-                    {formatCurrency(d.pnl, { compact: true })}
-                  </text>
-                )}
-                <text
-                  x={x + barW / 2}
-                  y={H - 12}
-                  textAnchor="middle"
-                  className={cn(
-                    "text-[12px]",
-                    hasData ? "fill-foreground font-medium" : "fill-muted",
-                  )}
-                >
-                  {d.label}
-                </text>
-              </g>
-            );
-          })}
-        </svg>
-
-        {/* Tooltip */}
-        <div
-          className={cn(
-            "pointer-events-none mt-1 rounded-lg border border-border bg-card px-3 py-2 text-xs shadow-lg transition-all duration-200 ease-out",
-            hover !== null
-              ? "opacity-100 translate-y-0"
-              : "opacity-0 -translate-y-1",
-          )}
-        >
-          <div className="font-medium">
-            {hover !== null ? data[hover].fullLabel : "—"}
-          </div>
-          <div
-            className={cn(
-              "tabular-nums",
-              hover !== null && data[hover].pnl >= 0
-                ? "text-profit"
-                : "text-loss",
-            )}
-          >
-            {hover !== null ? formatSignedCurrency(data[hover].pnl) : "—"}
-          </div>
-          {hover !== null && (
-            <div className="text-[10px] text-muted">
-              {data[hover].trades > 0
-                ? `${data[hover].trades} trade${data[hover].trades === 1 ? "" : "s"}`
-                : "No trading activity"}
-            </div>
-          )}
-        </div>
+              ))}
+            </Bar>
+          </BarChart>
+        </ResponsiveContainer>
       </div>
-    </div>
+    </Card>
   );
 }

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Loader2, Trash2, X } from "lucide-react";
+import { AnimatePresence, motion } from "motion/react";
 import { CURRENCIES } from "@/lib/utils";
 import type { Account, AccountInput } from "@/lib/types";
 import CustomSelect from "./CustomSelect";
@@ -51,8 +52,6 @@ export default function AccountModal({
     return () => window.removeEventListener("keydown", onKey);
   }, [open, onClose]);
 
-  if (!open) return null;
-
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
@@ -96,12 +95,24 @@ export default function AccountModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center">
-      <div
-        className="absolute inset-0 bg-black/50 backdrop-blur-sm animate-fade-in"
-        onClick={onClose}
-      />
-      <div className="relative z-10 flex max-h-[90vh] w-full max-w-sm flex-col animate-pop-in rounded-t-2xl border border-border bg-card p-5 shadow-2xl sm:rounded-2xl">
+    <AnimatePresence>
+      {open && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center">
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+            onClick={onClose}
+          />
+          <motion.div
+            initial={{ opacity: 0, y: 24, scale: 0.98 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 24, scale: 0.98 }}
+            transition={{ type: "spring", damping: 28, stiffness: 340 }}
+            className="relative z-10 flex max-h-[90vh] w-full max-w-sm flex-col rounded-t-2xl border border-border bg-card p-5 shadow-2xl sm:rounded-2xl"
+          >
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-base font-semibold">
             {isEdit ? "Edit account" : "New account"}
@@ -185,7 +196,9 @@ export default function AccountModal({
             </button>
           </div>
         </form>
-      </div>
-    </div>
+          </motion.div>
+        </div>
+      )}
+    </AnimatePresence>
   );
 }

@@ -1,10 +1,66 @@
 "use client";
 
-import { useEffect, useId, useRef, useState } from "react";
+import { useId } from "react";
 import { useRouter } from "next/navigation";
 import { TrendingUp } from "lucide-react";
+import {
+  Area,
+  AreaChart,
+  Brush,
+  ReferenceLine,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
+import type { DotProps } from "recharts";
+import type { CategoricalChartFunc } from "recharts/types/chart/types";
 import type { Trade } from "@/lib/types";
-import { equitySeries, formatCurrency, dateKey, cn } from "@/lib/utils";
+import { equitySeries, formatCurrency } from "@/lib/utils";
+import Card from "./ui/Card";
+
+function EquityTooltip({
+  active,
+  payload,
+  label,
+  startingBalance,
+}: {
+  active?: boolean;
+  payload?: { value: number }[];
+  label?: string;
+  startingBalance: number;
+}) {
+  if (!active || !payload?.length) return null;
+  const value = payload[0].value;
+  const positive = value >= startingBalance;
+  return (
+    <div className="rounded-lg border border-border bg-card px-3 py-2 text-sm shadow-lg">
+      <div className="text-muted">{label === "start" ? "Start" : label}</div>
+      <div
+        className="font-semibold tabular-nums"
+        style={{ color: positive ? "var(--profit)" : "var(--loss)" }}
+      >
+        {formatCurrency(value)}
+      </div>
+    </div>
+  );
+}
+
+function EquityActiveDot(props: DotProps & { payload?: { value: number }; startingBalance: number }) {
+  const { cx, cy, payload, startingBalance } = props;
+  if (cx === undefined || cy === undefined || !payload) return null;
+  const positive = payload.value >= startingBalance;
+  return (
+    <circle
+      cx={cx}
+      cy={cy}
+      r={4}
+      fill="var(--card)"
+      stroke={positive ? "var(--profit)" : "var(--loss)"}
+      strokeWidth={2}
+    />
+  );
+}
 
 export default function EquityCurve({
   trades,
@@ -14,82 +70,33 @@ export default function EquityCurve({
   startingBalance: number;
 }) {
   const router = useRouter();
-  const gradientId = useId();
-  const svgRef = useRef<SVGSVGElement>(null);
-  const pathRef = useRef<SVGPathElement>(null);
-  const [hover, setHover] = useState<{
-    i: number;
-    x: number;
-    y: number;
-  } | null>(null);
-  const [pathLength, setPathLength] = useState(0);
-  const [drawn, setDrawn] = useState(false);
-
+  const strokeGradientId = useId();
+  const fillGradientId = useId();
   const series = equitySeries(trades, startingBalance);
-
-  const W = 100;
-  const H = 42;
-
-  let path = "";
-  let area = "";
-  let last = startingBalance;
-  let min = startingBalance;
-  let max = startingBalance;
-  let range = 1;
-
-  if (series.length > 1) {
-    const values = series.map((s) => s.value);
-    min = Math.min(startingBalance, ...values);
-    max = Math.max(startingBalance, ...values);
-    range = max - min || 1;
-    const n = series.length;
-
-    const x = (i: number) => (n === 1 ? W / 2 : (i / (n - 1)) * W);
-    const y = (v: number) => H - ((v - min) / range) * H;
-
-    const pts = series.map(
-      (s, i) => `${x(i).toFixed(2)},${y(s.value).toFixed(2)}`,
-    );
-    path = `M ${pts.join(" L ")}`;
-    area = `${path} L ${x(n - 1).toFixed(2)},${H} L ${x(0).toFixed(2)},${H} Z`;
-    last = values[values.length - 1];
-  }
-
+  const last = series.length ? series[series.length - 1].value : startingBalance;
   const positive = last >= startingBalance;
-  const stroke = positive ? "var(--profit)" : "var(--loss)";
+  const showBrush = series.length > 10;
 
-  const tradeKey = series.map((s) => s.value).join(",");
-  useEffect(() => {
-    const el = pathRef.current;
-    if (!el) return;
-    const len = el.getTotalLength();
-    setPathLength(len);
-    setDrawn(false);
-    const t = setTimeout(() => setDrawn(true), 30);
-    return () => clearTimeout(t);
-  }, [tradeKey]);
+  // Diverging color: green above the starting balance, red below, with a
+  // hard transition exactly where the equity line crosses it — not just a
+  // single color picked from the final value.
+  const values = series.map((s) => s.value);
+  const min = Math.min(startingBalance, ...values);
+  const max = Math.max(startingBalance, ...values);
+  const range = max - min;
+  // Percentage from the chart's top (0%) down to the starting-balance line.
+  const crossOffset = range > 0 ? Math.min(1, Math.max(0, (max - startingBalance) / range)) : 0;
+  const crossPct = `${(crossOffset * 100).toFixed(2)}%`;
 
-  function handleMouseMove(e: React.MouseEvent<SVGSVGElement>) {
-    if (series.length <= 1) return;
-    const rect = svgRef.current?.getBoundingClientRect();
-    if (!rect) return;
-    const x = (e.clientX - rect.left) / rect.width;
-    const n = series.length;
-    const i = Math.min(n - 1, Math.max(0, Math.round(x * (n - 1))));
-    const value = series[i].value;
-    const y = 1 - (value - min) / range;
-    setHover({ i, x: (i / (n - 1)) * W, y: y * H });
-  }
-
-  function handleClick() {
-    if (!hover) return;
-    const point = series[hover.i];
-    if (!point) return;
-    router.push(`/analytics?date=${point.date}`);
-  }
+  const handleClick: CategoricalChartFunc = (state) => {
+    const label = state?.activeLabel;
+    if (typeof label === "string" && label !== "start") {
+      router.push(`/analytics?date=${label}`);
+    }
+  };
 
   return (
-    <div className="rounded-2xl border border-border bg-card p-5">
+    <Card padding="lg">
       <div className="flex items-start justify-between">
         <div>
           <div className="flex items-center gap-2">
@@ -98,101 +105,82 @@ export default function EquityCurve({
           </div>
           <p
             className="mt-1 text-2xl font-semibold tracking-tight tabular-nums"
-            style={{ color: stroke }}
+            style={{ color: positive ? "var(--profit)" : "var(--loss)" }}
           >
             {formatCurrency(last)}
           </p>
         </div>
         <span className="rounded-md bg-surface-2 px-2 py-1 text-xs text-muted">
-          {series.length - 1} day{series.length - 2 === 1 ? "" : "s"}
+          {Math.max(0, series.length - 1)} day{series.length - 2 === 1 ? "" : "s"}
         </span>
       </div>
 
-      <div className="mt-4 h-28 w-full">
+      <div className="mt-4 h-52 w-full">
         {series.length <= 1 ? (
           <div className="flex h-full items-center justify-center text-sm text-muted">
             No closed trades yet
           </div>
         ) : (
-          <svg
-            ref={svgRef}
-            viewBox={`0 0 ${W} ${H}`}
-            preserveAspectRatio="none"
-            className="h-full w-full cursor-pointer overflow-visible"
-            onMouseMove={handleMouseMove}
-            onMouseLeave={() => setHover(null)}
-            onClick={handleClick}
-          >
-            <defs>
-              <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor={stroke} stopOpacity="0.28" />
-                <stop offset="100%" stopColor={stroke} stopOpacity="0" />
-              </linearGradient>
-            </defs>
-            <path
-              d={area}
-              fill={`url(#${gradientId})`}
-              className="animate-fade-in"
-              style={{ animationDuration: "0.8s" }}
-            />
-            <path
-              ref={pathRef}
-              d={path}
-              fill="none"
-              stroke={stroke}
-              strokeWidth="1.5"
-              strokeLinejoin="round"
-              strokeLinecap="round"
-              vectorEffect="non-scaling-stroke"
-              style={{
-                strokeDasharray: pathLength,
-                strokeDashoffset: drawn ? 0 : pathLength,
-                transition:
-                  "stroke-dashoffset 0.8s ease-out, stroke 0.3s ease-out",
-              }}
-            />
-            {hover && (
-              <>
-                <line
-                  x1={hover.x}
-                  x2={hover.x}
-                  y1={0}
-                  y2={H}
-                  stroke="currentColor"
-                  strokeOpacity={0.3}
-                  strokeWidth={0.5}
-                  vectorEffect="non-scaling-stroke"
-                  className="transition-all duration-150 ease-out"
+          <ResponsiveContainer width="100%" height="100%">
+            <AreaChart
+              data={series}
+              margin={{ top: 4, right: 4, left: 4, bottom: 0 }}
+              onClick={handleClick}
+            >
+              <defs>
+                <linearGradient id={strokeGradientId} x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="var(--profit)" />
+                  <stop offset={crossPct} stopColor="var(--profit)" />
+                  <stop offset={crossPct} stopColor="var(--loss)" />
+                  <stop offset="100%" stopColor="var(--loss)" />
+                </linearGradient>
+                <linearGradient id={fillGradientId} x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="var(--profit)" stopOpacity={0.32} />
+                  <stop offset={crossPct} stopColor="var(--profit)" stopOpacity={0} />
+                  <stop offset={crossPct} stopColor="var(--loss)" stopOpacity={0} />
+                  <stop offset="100%" stopColor="var(--loss)" stopOpacity={0.32} />
+                </linearGradient>
+              </defs>
+              <XAxis dataKey="date" hide />
+              <YAxis domain={[min, max]} hide />
+              <Tooltip
+                content={<EquityTooltip startingBalance={startingBalance} />}
+                cursor={{ stroke: "var(--chart-axis)", strokeWidth: 1 }}
+              />
+              {range > 0 && (
+                <ReferenceLine
+                  y={startingBalance}
+                  stroke="var(--chart-axis)"
+                  strokeDasharray="3 3"
                 />
-                <circle
-                  cx={hover.x}
-                  cy={hover.y}
-                  r={1.5}
-                  fill="var(--background)"
-                  stroke={stroke}
-                  strokeWidth={0.6}
-                  vectorEffect="non-scaling-stroke"
-                  className="transition-all duration-150 ease-out"
+              )}
+              <Area
+                type="monotone"
+                dataKey="value"
+                baseValue={startingBalance}
+                stroke={`url(#${strokeGradientId})`}
+                strokeWidth={2}
+                fill={`url(#${fillGradientId})`}
+                isAnimationActive
+                animationDuration={600}
+                activeDot={(dotProps: DotProps & { payload?: { value: number } }) => (
+                  <EquityActiveDot {...dotProps} startingBalance={startingBalance} />
+                )}
+              />
+              {showBrush && (
+                <Brush
+                  dataKey="date"
+                  height={22}
+                  stroke="var(--accent)"
+                  fill="var(--surface-2)"
+                  travellerWidth={8}
+                  tickFormatter={() => ""}
                 />
-              </>
-            )}
-          </svg>
+              )}
+            </AreaChart>
+          </ResponsiveContainer>
         )}
       </div>
-
-      <div
-        className={cn(
-          "mt-2 flex items-center justify-between rounded-lg bg-surface-2 px-3 py-2 text-sm transition-all duration-200 ease-out",
-          hover
-            ? "opacity-100 translate-y-0"
-            : "opacity-0 -translate-y-1 pointer-events-none",
-        )}
-      >
-        <span className="text-muted">{hover ? series[hover.i].date : "—"}</span>
-        <span className="font-semibold tabular-nums" style={{ color: stroke }}>
-          {hover ? formatCurrency(series[hover.i].value) : "—"}
-        </span>
-      </div>
-    </div>
+    </Card>
   );
 }
