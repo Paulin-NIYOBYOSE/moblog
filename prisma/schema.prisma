@@ -96,6 +96,61 @@ model Trade {
   @@index([accountId, closeDate])
 }
 
+// A backtesting session (e.g. one FX Replay-style run over a pair/date
+// range). Fully separate from the live Account/Trade journal above.
+model Session {
+  id              String   @id @default(cuid())
+  name            String
+  pair            String
+  currency        String   @default("USD")
+  startingBalance Float    @default(0)
+  strategy        String?
+  tags            String[]
+  notes           String?
+  isArchived      Boolean  @default(false)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  trades BacktestTrade[]
+
+  @@index([isArchived])
+}
+
+model BacktestTrade {
+  id        String  @id @default(cuid())
+  session   Session @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  sessionId String
+
+  openDate  DateTime
+  closeDate DateTime?
+
+  pair      String
+  direction Direction @default(LONG)
+  exitLogic String?
+
+  pnl Float  @default(0)
+  roi Float?
+  rr  Float?
+
+  entry      Float?
+  exit       Float?
+  stopLoss   Float?
+  takeProfit Float?
+  size       Float?
+  riskAmount Float?
+
+  setup    String?
+  tags     String[]
+  comment  String?
+  chartUrl String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([sessionId, openDate])
+  @@index([sessionId, closeDate])
+}
+
 // Content management for social media posts and ideas
 model Content {
   id          String        @id @default(cuid())

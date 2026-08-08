@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 import {
   BarChart3,
   ChevronDown,
+  FlaskConical,
   LayoutDashboard,
   LineChart,
   ListOrdered,
@@ -26,6 +27,7 @@ const NAV = [
   { label: "Dashboard", href: "/", icon: LayoutDashboard },
   { label: "Trades", href: "/journal", icon: ListOrdered },
   { label: "Analytics", href: "/analytics", icon: BarChart3 },
+  { label: "Testing", href: "/testing", icon: FlaskConical },
   { label: "Content", href: "/content", icon: FileText },
 ];
 
