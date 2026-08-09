@@ -96,59 +96,41 @@ model Trade {
   @@index([accountId, closeDate])
 }
 
-// A backtesting session (e.g. one FX Replay-style run over a pair/date
-// range). Fully separate from the live Account/Trade journal above.
-model Session {
-  id              String   @id @default(cuid())
-  name            String
-  pair            String
-  currency        String   @default("USD")
-  startingBalance Float    @default(0)
-  strategy        String?
-  tags            String[]
-  notes           String?
-  isArchived      Boolean  @default(false)
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-
-  trades BacktestTrade[]
-
-  @@index([isArchived])
-}
-
-model BacktestTrade {
-  id        String  @id @default(cuid())
-  session   Session @relation(fields: [sessionId], references: [id], onDelete: Cascade)
-  sessionId String
-
-  openDate  DateTime
-  closeDate DateTime?
-
-  pair      String
-  direction Direction @default(LONG)
-  exitLogic String?
-
-  pnl Float  @default(0)
-  roi Float?
-  rr  Float?
-
-  entry      Float?
-  exit       Float?
-  stopLoss   Float?
-  takeProfit Float?
-  size       Float?
-  riskAmount Float?
-
-  setup    String?
-  tags     String[]
-  comment  String?
-  chartUrl String?
+// A folder/image library for reference screenshots (e.g. FX Replay
+// analytics for a given pair/year) — browsed like a computer folder tree.
+// Images are stored directly in Postgres (bytea) since the app has no
+// object-storage service configured; client-side compression keeps files
+// small before upload.
+model MediaFolder {
+  id       String       @id @default(cuid())
+  name     String
+  parentId String?
+  parent   MediaFolder? @relation("FolderChildren", fields: [parentId], references: [id], onDelete: Cascade)
+  children MediaFolder[] @relation("FolderChildren")
+  images   MediaImage[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@index([sessionId, openDate])
-  @@index([sessionId, closeDate])
+  @@index([parentId])
+}
+
+model MediaImage {
+  id       String       @id @default(cuid())
+  folder   MediaFolder? @relation(fields: [folderId], references: [id], onDelete: Cascade)
+  folderId String?
+
+  name     String
+  mimeType String
+  size     Int // bytes, post-compression
+  data     Bytes
+  width    Int?
+  height   Int?
+  caption  String?
+
+  createdAt DateTime @default(now())
+
+  @@index([folderId])
 }
 
 // Content management for social media posts and ideas
