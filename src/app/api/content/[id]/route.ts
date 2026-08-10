@@ -44,14 +44,15 @@ function toDateOrNull(value: unknown): Date | null {
 // GET /api/content/[id]  -> get single content
 export async function GET(
   request: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   if (!(await isAuthenticated())) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   try {
+    const { id } = await params;
     const content = await prisma.content.findUnique({
-      where: { id: params.id },
+      where: { id },
     });
     if (!content) {
       return NextResponse.json({ error: "Content not found." }, { status: 404 });
@@ -66,12 +67,13 @@ export async function GET(
 // PUT /api/content/[id]  -> update content
 export async function PUT(
   request: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   if (!(await isAuthenticated())) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   try {
+    const { id } = await params;
     const body = await request.json();
 
     const title = String(body.title ?? "").trim();
@@ -80,7 +82,7 @@ export async function PUT(
     }
 
     const content = await prisma.content.update({
-      where: { id: params.id },
+      where: { id },
       data: {
         title,
         status: parseContentStatus(body.status),
@@ -105,14 +107,15 @@ export async function PUT(
 // DELETE /api/content/[id]  -> delete content
 export async function DELETE(
   request: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   if (!(await isAuthenticated())) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   try {
+    const { id } = await params;
     await prisma.content.delete({
-      where: { id: params.id },
+      where: { id },
     });
     return NextResponse.json({ success: true });
   } catch (error) {
