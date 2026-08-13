@@ -19,6 +19,8 @@ export default function ImageLightbox({
   onNavigate,
   onDelete,
   onRename,
+  onUpdateCaption,
+  captionPlaceholder = "Add a note...",
 }: {
   images: MediaImage[];
   index: number;
@@ -26,16 +28,22 @@ export default function ImageLightbox({
   onNavigate: (index: number) => void;
   onDelete: (id: string) => Promise<void>;
   onRename: (id: string, name: string) => Promise<void>;
+  onUpdateCaption?: (id: string, caption: string) => Promise<void>;
+  captionPlaceholder?: string;
 }) {
   const image = images[index];
   const [editingName, setEditingName] = useState(false);
   const [nameDraft, setNameDraft] = useState(image?.name ?? "");
+  const [editingCaption, setEditingCaption] = useState(false);
+  const [captionDraft, setCaptionDraft] = useState(image?.caption ?? "");
   const [deleting, setDeleting] = useState(false);
   const confirm = useConfirm();
 
   useEffect(() => {
     setNameDraft(image?.name ?? "");
+    setCaptionDraft(image?.caption ?? "");
     setEditingName(false);
+    setEditingCaption(false);
   }, [image]);
 
   useEffect(() => {
@@ -77,6 +85,16 @@ export default function ImageLightbox({
     }
   }
 
+  async function commitCaption() {
+    setEditingCaption(false);
+    const trimmed = captionDraft.trim();
+    if (onUpdateCaption && trimmed !== (image.caption ?? "")) {
+      await onUpdateCaption(image.id, trimmed);
+    } else {
+      setCaptionDraft(image.caption ?? "");
+    }
+  }
+
   return (
     <AnimatePresence>
       <div className="fixed inset-0 z-[60] flex flex-col bg-black/90 backdrop-blur-sm">
@@ -105,6 +123,27 @@ export default function ImageLightbox({
               {formatBytes(image.size)}
               {image.width && image.height ? ` · ${image.width}×${image.height}` : ""} · {index + 1}/{images.length}
             </p>
+            {onUpdateCaption &&
+              (editingCaption ? (
+                <input
+                  autoFocus
+                  value={captionDraft}
+                  onChange={(e) => setCaptionDraft(e.target.value)}
+                  onBlur={commitCaption}
+                  onKeyDown={(e) => e.key === "Enter" && commitCaption()}
+                  placeholder={captionPlaceholder}
+                  className="mt-1 w-full max-w-md rounded-md border border-white/20 bg-white/10 px-2 py-1 text-xs text-white outline-none placeholder:text-white/40"
+                />
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setEditingCaption(true)}
+                  className="mt-1 truncate text-left text-xs text-white/70 hover:underline"
+                  title="Click to edit note"
+                >
+                  {image.caption || captionPlaceholder}
+                </button>
+              ))}
           </div>
           <div className="flex shrink-0 items-center gap-1">
             <a

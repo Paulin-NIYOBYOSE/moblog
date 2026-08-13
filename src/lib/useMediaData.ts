@@ -14,7 +14,8 @@ async function parseError(res: Response): Promise<string> {
   }
 }
 
-export function useMediaData(folderId: string | null) {
+export function useMediaData(folderId: string | null, opts?: { enabled?: boolean }) {
+  const enabled = opts?.enabled ?? true;
   const [folders, setFolders] = useState<MediaFolder[]>([]);
   const [images, setImages] = useState<MediaImage[]>([]);
   const [breadcrumb, setBreadcrumb] = useState<Crumb[]>([]);
@@ -24,6 +25,7 @@ export function useMediaData(folderId: string | null) {
   const toast = useToast();
 
   const refresh = useCallback(async () => {
+    if (!enabled) return;
     try {
       setError(null);
       const qs = folderId ? `?parentId=${encodeURIComponent(folderId)}` : "";
@@ -46,12 +48,16 @@ export function useMediaData(folderId: string | null) {
     } finally {
       setLoading(false);
     }
-  }, [folderId, toast]);
+  }, [folderId, enabled, toast]);
 
   useEffect(() => {
+    if (!enabled) {
+      setLoading(true);
+      return;
+    }
     setLoading(true);
     refresh();
-  }, [refresh]);
+  }, [refresh, enabled]);
 
   const createFolder = useCallback(
     async (name: string) => {
@@ -112,7 +118,7 @@ export function useMediaData(folderId: string | null) {
   );
 
   const uploadImages = useCallback(
-    async (files: File[]) => {
+    async (files: File[], caption?: string) => {
       if (files.length === 0) return;
       setUploading(true);
       const toastId = toast.loading(`Uploading ${files.length} image${files.length === 1 ? "" : "s"}...`);
@@ -127,6 +133,7 @@ export function useMediaData(folderId: string | null) {
             form.append("name", file.name);
             form.append("width", String(width));
             form.append("height", String(height));
+            if (caption) form.append("caption", caption);
             const res = await fetch("/api/media/images", { method: "POST", body: form });
             if (!res.ok) throw new Error(await parseError(res));
             succeeded += 1;
@@ -177,6 +184,24 @@ export function useMediaData(folderId: string | null) {
     [refresh, toast],
   );
 
+  const updateCaption = useCallback(
+    async (id: string, caption: string) => {
+      try {
+        const res = await fetch(`/api/media/images/${id}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ caption }),
+        });
+        if (!res.ok) throw new Error(await parseError(res));
+        await refresh();
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : "Failed to update note");
+        throw e;
+      }
+    },
+    [refresh, toast],
+  );
+
   return {
     folders,
     images,
@@ -191,5 +216,6 @@ export function useMediaData(folderId: string | null) {
     uploadImages,
     deleteImage,
     renameImage,
+    updateCaption,
   };
 }

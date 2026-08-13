@@ -5,8 +5,9 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   BarChart3,
+  CalendarCheck,
   ChevronDown,
-  FlaskConical,
+  Images,
   LayoutDashboard,
   LineChart,
   ListOrdered,
@@ -27,7 +28,8 @@ const NAV = [
   { label: "Dashboard", href: "/", icon: LayoutDashboard },
   { label: "Trades", href: "/journal", icon: ListOrdered },
   { label: "Analytics", href: "/analytics", icon: BarChart3 },
-  { label: "Testing", href: "/testing", icon: FlaskConical },
+  { label: "Backtesting", href: "/backtesting", icon: CalendarCheck },
+  { label: "Gallery", href: "/backtesting/gallery", icon: Images },
   { label: "Content", href: "/content", icon: FileText },
 ];
 
@@ -59,6 +61,15 @@ export default function Sidebar({
   const pathname = usePathname();
   const [showAccounts, setShowAccounts] = useState(true);
   const activeNavLayoutId = useId();
+
+  // Longest-prefix match so nested routes (e.g. Gallery under Backtesting)
+  // don't light up their parent nav item too.
+  const activeNavHref = NAV.reduce<string | null>((best, candidate) => {
+    const matches =
+      pathname === candidate.href || (candidate.href !== "/" && pathname.startsWith(`${candidate.href}/`));
+    if (!matches) return best;
+    return !best || candidate.href.length > best.length ? candidate.href : best;
+  }, null);
 
   return (
     <>
@@ -100,9 +111,7 @@ export default function Sidebar({
 
         <nav className="flex-1 px-3 py-4 space-y-1">
           {NAV.map((item) => {
-            const active =
-              pathname === item.href ||
-              (item.href !== "/" && pathname.startsWith(item.href));
+            const active = item.href === activeNavHref;
             return (
               <Link
                 key={item.label}

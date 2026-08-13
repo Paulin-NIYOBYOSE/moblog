@@ -242,3 +242,50 @@ export interface MonthlyMatrixRow {
   yearPnl: number;
   yearReturnPct: number;
 }
+
+// ---------------------------------------------------------------------------
+// Backtesting Series (src/lib/backtesting.ts) — tracks the 168-item
+// (instrument x year) backtesting plan. Independent of trades/journaling.
+// ---------------------------------------------------------------------------
+
+export interface BacktestItem {
+  id: string;
+  instrument: string;
+  year: number;
+  sequence: number;
+  completed: boolean;
+  completedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type PaceStatus = "ahead" | "on_track" | "behind";
+
+export interface BacktestingSummary {
+  total: number;
+  completed: number;
+  percent: number;
+  remaining: number;
+  daysRemaining: number;
+  expectedCompletionDate: string | null; // yyyy-mm-dd, null once fully complete
+  status: PaceStatus;
+  todaysPlan: BacktestItem[];
+  nextUp: BacktestItem[];
+  completedTodayCount: number;
+  daysCompleted: number;
+  currentStreak: number;
+}
+
+export interface InstrumentProgress {
+  instrument: string;
+  items: BacktestItem[]; // 6 years, ascending
+  completed: number;
+  total: number;
+  percent: number;
+}
+
+export interface DayHistoryEntry {
+  date: string; // yyyy-mm-dd
+  items: BacktestItem[];
+  status: "completed" | "partial" | "missed" | "upcoming";
+}
