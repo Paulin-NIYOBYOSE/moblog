@@ -4,7 +4,7 @@ import { Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import PageHeader from "@/components/ui/PageHeader";
 import Skeleton from "@/components/ui/Skeleton";
-import { INSTRUMENTS, YEARS } from "@/lib/backtesting";
+import { INSTRUMENTS, isGalleryTarget } from "@/lib/backtesting";
 import BacktestGalleryView from "@/components/backtesting/BacktestGalleryView";
 
 export default function BacktestGalleryPage() {
@@ -19,24 +19,20 @@ function BacktestGalleryPageInner() {
   const searchParams = useSearchParams();
   const router = useRouter();
 
-  const instrumentParam = searchParams.get("instrument");
-  const yearParam = Number(searchParams.get("year"));
-  const instrument = (INSTRUMENTS as readonly string[]).includes(instrumentParam ?? "")
-    ? (instrumentParam as string)
-    : INSTRUMENTS[0];
-  const year = (YEARS as readonly number[]).includes(yearParam) ? yearParam : YEARS[0];
+  const targetParam = searchParams.get("target") ?? "";
+  const target = isGalleryTarget(targetParam) ? targetParam : INSTRUMENTS[0];
 
-  function setSelection(nextInstrument: string, nextYear: number) {
-    router.push(`/backtesting/gallery?instrument=${nextInstrument}&year=${nextYear}`, { scroll: false });
+  function setTarget(next: string) {
+    router.push(`/backtesting/gallery?target=${encodeURIComponent(next)}`, { scroll: false });
   }
 
   return (
     <div>
       <PageHeader
         title="Backtesting Gallery"
-        subtitle="Screenshots from your backtesting sessions, organized by instrument and year"
+        subtitle="One analytics screenshot per pair across all years, plus your combined all-pairs view"
       />
-      <BacktestGalleryView instrument={instrument} year={year} onSelect={setSelection} />
+      <BacktestGalleryView target={target} onSelect={setTarget} />
     </div>
   );
 }

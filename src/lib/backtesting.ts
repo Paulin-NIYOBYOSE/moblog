@@ -50,6 +50,30 @@ export const DAILY_TARGET = 2;
 export const TOTAL_ITEMS = INSTRUMENTS.length * YEARS.length; // 168
 export const BACKTEST_START_DATE = "2026-08-14"; // yyyy-mm-dd, local
 
+// ---------------------------------------------------------------------------
+// Gallery targets
+//
+// Screenshots are filed per *pair* (one analytics image covering the pair's
+// whole 2020–2025 run), not per pair-year — plus a single combined bucket for
+// the all-pairs summary uploaded at the end. The tracker still tracks
+// individual pair-years; only the gallery is organized this way.
+// ---------------------------------------------------------------------------
+
+export const OVERALL_TARGET = "Overall" as const;
+
+export type GalleryTarget = (typeof INSTRUMENTS)[number] | typeof OVERALL_TARGET;
+
+/** Every valid gallery bucket: 28 pairs plus the combined "Overall" view. */
+export const GALLERY_TARGETS: readonly string[] = [...INSTRUMENTS, OVERALL_TARGET];
+
+export function isGalleryTarget(value: string): boolean {
+  return GALLERY_TARGETS.includes(value);
+}
+
+export function galleryTargetLabel(target: string): string {
+  return target === OVERALL_TARGET ? "All pairs combined" : target;
+}
+
 /** The fixed (instrument, year, sequence) triples the DB is seeded with. */
 export function planSequence(): { instrument: string; year: number; sequence: number }[] {
   const plan: { instrument: string; year: number; sequence: number }[] = [];

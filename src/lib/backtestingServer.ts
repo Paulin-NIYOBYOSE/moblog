@@ -27,17 +27,15 @@ function findFolder(parentId: string | null, name: string) {
 }
 
 /**
- * Read-only lookup of the Backtesting Series / {instrument} / {year} folder.
- * Returns null when it doesn't exist yet — browsing a pair-year with no
- * screenshots must never write to the database.
+ * Read-only lookup of the Backtesting Series / {target} folder, where target
+ * is a pair name or "Overall". Returns null when it doesn't exist yet —
+ * browsing a target with no screenshots must never write to the database.
  */
-export async function findGalleryFolderId(instrument: string, year: number): Promise<string | null> {
+export async function findGalleryFolderId(target: string): Promise<string | null> {
   const root = await findFolder(null, GALLERY_ROOT_FOLDER_NAME);
   if (!root) return null;
-  const instrumentFolder = await findFolder(root.id, instrument);
-  if (!instrumentFolder) return null;
-  const yearFolder = await findFolder(instrumentFolder.id, String(year));
-  return yearFolder?.id ?? null;
+  const folder = await findFolder(root.id, target);
+  return folder?.id ?? null;
 }
 
 async function findOrCreateFolder(parentId: string | null, name: string): Promise<string> {
@@ -48,13 +46,12 @@ async function findOrCreateFolder(parentId: string | null, name: string): Promis
 }
 
 /**
- * Finds — creating if needed — the Backtesting Series / {instrument} / {year}
- * folder, reusing the existing MediaFolder/MediaImage gallery as-is. Only
- * called when the user actually uploads a screenshot, so the create path is
- * user-initiated and never runs concurrently for the same pair-year.
+ * Finds — creating if needed — the Backtesting Series / {target} folder,
+ * reusing the existing MediaFolder/MediaImage gallery as-is. Only called when
+ * the user actually uploads a screenshot, so the create path is user-initiated
+ * and never runs concurrently for the same target.
  */
-export async function resolveGalleryFolderId(instrument: string, year: number): Promise<string> {
+export async function resolveGalleryFolderId(target: string): Promise<string> {
   const rootId = await findOrCreateFolder(null, GALLERY_ROOT_FOLDER_NAME);
-  const instrumentId = await findOrCreateFolder(rootId, instrument);
-  return findOrCreateFolder(instrumentId, String(year));
+  return findOrCreateFolder(rootId, target);
 }

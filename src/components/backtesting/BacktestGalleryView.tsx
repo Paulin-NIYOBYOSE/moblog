@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Check, ImageOff, Loader2, Upload } from "lucide-react";
-import { INSTRUMENTS, YEARS } from "@/lib/backtesting";
+import { Check, ImageOff, Layers, Loader2, Upload } from "lucide-react";
+import { INSTRUMENTS, OVERALL_TARGET, galleryTargetLabel } from "@/lib/backtesting";
 import { useMediaData } from "@/lib/useMediaData";
 import { useBacktestingData } from "@/lib/useBacktestingData";
 import { useToast } from "@/components/ToastContext";
@@ -18,10 +18,10 @@ function formatBytes(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-// Read-only lookup — viewing a pair-year never creates a folder. Returns null
+// Read-only lookup — viewing a target never creates a folder. Returns null
 // until the first screenshot is uploaded there.
-async function lookupFolder(instrument: string, year: number): Promise<string | null> {
-  const res = await fetch(`/api/backtesting/gallery-folder?instrument=${instrument}&year=${year}`, {
+async function lookupFolder(target: string): Promise<string | null> {
+  const res = await fetch(`/api/backtesting/gallery-folder?target=${encodeURIComponent(target)}`, {
     cache: "no-store",
   });
   if (!res.ok) throw new Error("Failed to load gallery folder");
@@ -30,24 +30,22 @@ async function lookupFolder(instrument: string, year: number): Promise<string | 
 
 // Creates the folder if needed. Only called from the upload path, so the write
 // is user-initiated rather than happening on every page view.
-async function ensureFolder(instrument: string, year: number): Promise<string> {
+async function ensureFolder(target: string): Promise<string> {
   const res = await fetch("/api/backtesting/gallery-folder", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ instrument, year }),
+    body: JSON.stringify({ target }),
   });
   if (!res.ok) throw new Error("Failed to prepare gallery folder");
   return (await res.json()).folderId as string;
 }
 
 export default function BacktestGalleryView({
-  instrument,
-  year,
+  target,
   onSelect,
 }: {
-  instrument: string;
-  year: number;
-  onSelect: (instrument: string, year: number) => void;
+  target: string;
+  onSelect: (target: string) => void;
 }) {
   const toast = useToast();
   // Toast identity changes on every toast add/remove (e.g. throughout an
@@ -64,13 +62,15 @@ export default function BacktestGalleryView({
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const isOverall = target === OVERALL_TARGET;
   const { items } = useBacktestingData();
-  const currentItem = items.find((i) => i.instrument === instrument && i.year === year);
+  const pairItems = items.filter((i) => i.instrument === target);
+  const pairDone = pairItems.filter((i) => i.completed).length;
 
   useEffect(() => {
     let cancelled = false;
     setReady(false);
-    lookupFolder(instrument, year)
+    lookupFolder(target)
       .then((id) => {
         if (cancelled) return;
         setFolderId(id);
@@ -82,7 +82,7 @@ export default function BacktestGalleryView({
     return () => {
       cancelled = true;
     };
-  }, [instrument, year]);
+  }, [target]);
 
   // Only fetch once a folder actually exists — a null folderId here means
   // "no screenshots yet", not "the gallery root".
@@ -96,9 +96,10 @@ export default function BacktestGalleryView({
     if (!list.length) return;
     try {
       // The folder is created on first upload rather than on page view.
-      const targetFolderId = folderId ?? (await ensureFolder(instrument, year));
+      const targetFolderId = folderId ?? (await ensureFolder(target));
       if (targetFolderId !== folderId) setFolderId(targetFolderId);
       await uploadImages(list, note.trim() || undefined, targetFolderId);
+      setNote("");
     } catch (e) {
       toastRef.current.error(e instanceof Error ? e.message : "Upload failed");
     }
@@ -107,58 +108,61 @@ export default function BacktestGalleryView({
   return (
     <div>
       <div className="mb-4 flex flex-wrap gap-1.5">
-        {INSTRUMENTS.map((inst) => (
+        {INSTRUMENTS.map((pair) => (
           <button
-            key={inst}
+            key={pair}
             type="button"
-            onClick={() => onSelect(inst, year)}
+            onClick={() => onSelect(pair)}
             className={cn(
               "rounded-lg border px-2.5 py-1 text-xs font-medium transition-colors",
-              inst === instrument
+              pair === target
                 ? "border-accent bg-accent/10 text-accent"
                 : "border-border text-muted hover:bg-surface-2 hover:text-foreground",
             )}
           >
-            {inst}
+            {pair}
           </button>
         ))}
+        <button
+          type="button"
+          onClick={() => onSelect(OVERALL_TARGET)}
+          className={cn(
+            "inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs font-medium transition-colors",
+            isOverall
+              ? "border-accent bg-accent/10 text-accent"
+              : "border-border text-muted hover:bg-surface-2 hover:text-foreground",
+          )}
+        >
+          <Layers className="h-3 w-3" />
+          All pairs combined
+        </button>
       </div>
 
-      <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap gap-1.5">
-          {YEARS.map((y) => (
-            <button
-              key={y}
-              type="button"
-              onClick={() => onSelect(instrument, y)}
-              className={cn(
-                "rounded-lg border px-3 py-1 text-xs font-medium transition-colors",
-                y === year
-                  ? "border-accent bg-accent/10 text-accent"
-                  : "border-border text-muted hover:bg-surface-2 hover:text-foreground",
-              )}
-            >
-              {y}
-            </button>
-          ))}
+      <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <div className="flex flex-wrap items-center gap-2">
+            <h2 className="text-base font-semibold tracking-tight">{galleryTargetLabel(target)}</h2>
+            {!isOverall && pairItems.length > 0 && (
+              <Badge
+                tone={pairDone === pairItems.length ? "profit" : "muted"}
+                icon={pairDone === pairItems.length ? Check : undefined}
+              >
+                {pairDone}/{pairItems.length} years backtested
+              </Badge>
+            )}
+          </div>
+          <p className="mt-0.5 text-sm text-muted">
+            {isOverall
+              ? "Combined analytics across all 28 pairs"
+              : "Analytics across the full 2020–2025 run"}
+          </p>
         </div>
-        {currentItem && (
-          <Badge tone={currentItem.completed ? "profit" : "muted"} icon={currentItem.completed ? Check : undefined}>
-            {currentItem.completed ? "Backtested" : "Not backtested yet"}
-          </Badge>
-        )}
-      </div>
-
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-base font-semibold tracking-tight">
-          {instrument} — {year}
-        </h2>
         <div className="flex flex-wrap items-center gap-2">
           <input
             value={note}
             onChange={(e) => setNote(e.target.value)}
-            placeholder="Note / tag (optional)"
-            className="input w-44 py-1.5 text-xs"
+            placeholder="Note for this upload (optional)"
+            className="input w-52 py-1.5 text-xs"
           />
           <button
             type="button"
@@ -197,37 +201,45 @@ export default function BacktestGalleryView({
           }}
         >
           {!ready || loading ? (
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-6">
-              {Array.from({ length: 6 }).map((_, i) => (
-                <Skeleton key={i} className="aspect-square" />
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+              {Array.from({ length: 4 }).map((_, i) => (
+                <Skeleton key={i} className="aspect-video" />
               ))}
             </div>
           ) : images.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-16 text-center">
               <ImageOff className="mb-3 h-8 w-8 text-muted" />
-              <p className="text-sm font-medium">No screenshots yet for {instrument} {year}</p>
+              <p className="text-sm font-medium">No screenshots yet for {galleryTargetLabel(target)}</p>
               <p className="mt-1 max-w-sm text-sm text-muted">
-                Drop screenshots here, or use the upload button above.
+                {isOverall
+                  ? "Upload your combined all-pairs analytics here once every pair is done."
+                  : "Drop this pair's analytics screenshot here, or use the upload button above."}
               </p>
             </div>
           ) : (
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-6">
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
               {images.map((img, i) => (
                 <button
                   key={img.id}
                   type="button"
                   onClick={() => setLightboxIndex(i)}
-                  className="group relative aspect-square overflow-hidden rounded-xl border border-border bg-surface-2"
+                  className="group overflow-hidden rounded-xl border border-border bg-surface-2 text-left transition-colors hover:border-accent/40"
                 >
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={`/api/media/images/${img.id}`}
-                    alt={img.name}
-                    className="h-full w-full object-cover transition-transform duration-200 group-hover:scale-105"
-                  />
-                  <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 to-transparent px-2 pb-1.5 pt-4 opacity-0 transition-opacity group-hover:opacity-100">
-                    <p className="truncate text-[11px] font-medium text-white">{img.name}</p>
-                    <p className="truncate text-[10px] text-white/70">{img.caption || formatBytes(img.size)}</p>
+                  <div className="relative aspect-video overflow-hidden">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={`/api/media/images/${img.id}`}
+                      alt={img.name}
+                      className="h-full w-full object-cover transition-transform duration-200 group-hover:scale-105"
+                    />
+                  </div>
+                  {/* Notes matter more than filenames here, so show them inline
+                      rather than only on hover. */}
+                  <div className="px-2.5 py-2">
+                    <p className="truncate text-xs font-medium">{img.caption || img.name}</p>
+                    <p className="mt-0.5 truncate text-[11px] text-muted">
+                      {img.caption ? img.name : formatBytes(img.size)}
+                    </p>
                   </div>
                 </button>
               ))}
@@ -245,7 +257,7 @@ export default function BacktestGalleryView({
           onDelete={deleteImage}
           onRename={renameImage}
           onUpdateCaption={updateCaption}
-          captionPlaceholder="Add a note or tag..."
+          captionPlaceholder="Add a note..."
         />
       )}
     </div>

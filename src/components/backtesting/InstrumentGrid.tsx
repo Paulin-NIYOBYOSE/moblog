@@ -18,9 +18,9 @@ export default function InstrumentGrid({
   const [selected, setSelected] = useState<string | null>(null);
   const active = instruments.find((i) => i.instrument === selected) ?? null;
 
-  function viewGallery(instrument: string, year: number) {
+  function viewGallery(instrument: string) {
     setSelected(null);
-    router.push(`/backtesting/gallery?instrument=${instrument}&year=${year}`);
+    router.push(`/backtesting/gallery?target=${encodeURIComponent(instrument)}`);
   }
 
   return (

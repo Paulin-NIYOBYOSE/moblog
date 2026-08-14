@@ -14,7 +14,7 @@ export default function InstrumentDetailModal({
   instrument: InstrumentProgress | null;
   onClose: () => void;
   onToggle: (id: string, completed: boolean) => void;
-  onViewGallery: (instrument: string, year: number) => void;
+  onViewGallery: (instrument: string) => void;
 }) {
   return (
     <AnimatePresence>
@@ -54,39 +54,38 @@ export default function InstrumentDetailModal({
 
             <div className="space-y-2">
               {instrument.items.map((item) => (
-                <div
+                <button
                   key={item.id}
+                  type="button"
+                  onClick={() => onToggle(item.id, !item.completed)}
                   className={cn(
-                    "flex items-center gap-2 rounded-xl border px-3 py-2.5 transition-colors",
+                    "flex w-full items-center gap-3 rounded-xl border px-3 py-2.5 text-left transition-colors",
                     item.completed ? "border-profit/30 bg-profit-soft" : "border-border bg-surface-2",
                   )}
                 >
-                  <button
-                    type="button"
-                    onClick={() => onToggle(item.id, !item.completed)}
-                    className="flex flex-1 items-center gap-3 text-left"
+                  <span
+                    className={cn(
+                      "flex h-5 w-5 shrink-0 items-center justify-center rounded-full",
+                      item.completed ? "bg-profit text-white" : "border border-border bg-surface",
+                    )}
                   >
-                    <span
-                      className={cn(
-                        "flex h-5 w-5 shrink-0 items-center justify-center rounded-full",
-                        item.completed ? "bg-profit text-white" : "border border-border bg-surface",
-                      )}
-                    >
-                      {item.completed && <Check className="h-3 w-3" />}
-                    </span>
-                    <span className="text-sm font-medium">{item.year}</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => onViewGallery(instrument.instrument, item.year)}
-                    title="View screenshots"
-                    className="flex h-7 w-7 items-center justify-center rounded-md text-muted transition-colors hover:bg-surface hover:text-foreground"
-                  >
-                    <Camera className="h-3.5 w-3.5" />
-                  </button>
-                </div>
+                    {item.completed && <Check className="h-3 w-3" />}
+                  </span>
+                  <span className="text-sm font-medium">{item.year}</span>
+                </button>
               ))}
             </div>
+
+            {/* Screenshots are filed per pair (all years in one analytics
+                image), so this links to the pair rather than a single year. */}
+            <button
+              type="button"
+              onClick={() => onViewGallery(instrument.instrument)}
+              className="mt-4 flex w-full items-center justify-center gap-2 rounded-lg border border-border px-4 py-2 text-sm font-medium transition-colors hover:bg-surface-2"
+            >
+              <Camera className="h-4 w-4" />
+              View {instrument.instrument} screenshots
+            </button>
           </motion.div>
         </div>
       )}

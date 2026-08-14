@@ -1,30 +1,29 @@
 import { NextResponse } from "next/server";
 import { isAuthenticated } from "@/lib/serverAuth";
 import { findGalleryFolderId, resolveGalleryFolderId } from "@/lib/backtestingServer";
-import { INSTRUMENTS, YEARS } from "@/lib/backtesting";
+import { isGalleryTarget } from "@/lib/backtesting";
 
 export const dynamic = "force-dynamic";
 
-/** Validates ?instrument=&year= (GET) or the JSON body (POST). */
-function parsePair(instrument: string, year: number): { error: string } | { instrument: string; year: number } {
-  if (!(INSTRUMENTS as readonly string[]).includes(instrument)) return { error: "Unknown instrument." };
-  if (!(YEARS as readonly number[]).includes(year)) return { error: "Unknown year." };
-  return { instrument, year };
+/** A gallery target is a pair name (e.g. "EURUSD") or "Overall". */
+function parseTarget(raw: string): { error: string } | { target: string } {
+  if (!isGalleryTarget(raw)) return { error: "Unknown gallery target." };
+  return { target: raw };
 }
 
-// GET /api/backtesting/gallery-folder?instrument=EURUSD&year=2022
-// Read-only: returns { folderId: string | null }. Browsing a pair-year that
-// has no screenshots yet must not create anything.
+// GET /api/backtesting/gallery-folder?target=EURUSD
+// Read-only: returns { folderId: string | null }. Browsing a target that has
+// no screenshots yet must not create anything.
 export async function GET(request: Request) {
   if (!(await isAuthenticated())) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   try {
     const { searchParams } = new URL(request.url);
-    const parsed = parsePair(searchParams.get("instrument") ?? "", Number(searchParams.get("year")));
+    const parsed = parseTarget(searchParams.get("target") ?? "");
     if ("error" in parsed) return NextResponse.json(parsed, { status: 400 });
 
-    const folderId = await findGalleryFolderId(parsed.instrument, parsed.year);
+    const folderId = await findGalleryFolderId(parsed.target);
     return NextResponse.json({ folderId });
   } catch (error) {
     console.error("GET /api/backtesting/gallery-folder failed:", error);
@@ -32,7 +31,7 @@ export async function GET(request: Request) {
   }
 }
 
-// POST /api/backtesting/gallery-folder -> { instrument, year }
+// POST /api/backtesting/gallery-folder -> { target }
 // Find-or-create; called just before an upload so the folder exists to receive
 // it. Returns { folderId } for the existing /api/media/images upload flow.
 export async function POST(request: Request) {
@@ -41,10 +40,10 @@ export async function POST(request: Request) {
   }
   try {
     const body = await request.json();
-    const parsed = parsePair(String(body.instrument ?? ""), Number(body.year));
+    const parsed = parseTarget(String(body.target ?? ""));
     if ("error" in parsed) return NextResponse.json(parsed, { status: 400 });
 
-    const folderId = await resolveGalleryFolderId(parsed.instrument, parsed.year);
+    const folderId = await resolveGalleryFolderId(parsed.target);
     return NextResponse.json({ folderId });
   } catch (error) {
     console.error("POST /api/backtesting/gallery-folder failed:", error);
