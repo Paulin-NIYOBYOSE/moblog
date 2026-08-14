@@ -40,7 +40,7 @@ export function ConfirmProvider({ children }: { children: React.ReactNode }) {
       {children}
       <AnimatePresence>
         {state && (
-          <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center">
+          <div className="fixed inset-0 z-[70] flex items-end justify-center sm:items-center">
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}

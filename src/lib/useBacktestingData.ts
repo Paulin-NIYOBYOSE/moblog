@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useToast } from "@/components/ToastContext";
 import type { BacktestItem } from "./types";
 
@@ -18,6 +18,13 @@ export function useBacktestingData() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const toast = useToast();
+  // Toast identity changes on every toast add/remove — read it via a ref so
+  // it doesn't recreate refresh/setCompleted/completeMany (and retrigger the
+  // mount effect) every time a toast fires.
+  const toastRef = useRef(toast);
+  useEffect(() => {
+    toastRef.current = toast;
+  }, [toast]);
 
   const refresh = useCallback(async () => {
     try {
@@ -28,11 +35,11 @@ export function useBacktestingData() {
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Failed to load backtesting progress";
       setError(msg);
-      toast.error(msg);
+      toastRef.current.error(msg);
     } finally {
       setLoading(false);
     }
-  }, [toast]);
+  }, []);
 
   useEffect(() => {
     refresh();
@@ -54,16 +61,16 @@ export function useBacktestingData() {
         const updated = await res.json();
         setItems((prev) => prev.map((i) => (i.id === id ? updated : i)));
       } catch (e) {
-        toast.error(e instanceof Error ? e.message : "Failed to update item");
+        toastRef.current.error(e instanceof Error ? e.message : "Failed to update item");
         await refresh();
       }
     },
-    [refresh, toast],
+    [refresh],
   );
 
   const completeMany = useCallback(
     async (ids: string[]) => {
-      const toastId = toast.loading("Updating progress...");
+      const toastId = toastRef.current.loading("Updating progress...");
       try {
         await Promise.all(
           ids.map(async (id) => {
@@ -76,14 +83,14 @@ export function useBacktestingData() {
           }),
         );
         await refresh();
-        toast.success("Marked as completed");
+        toastRef.current.success("Marked as completed");
       } catch (e) {
-        toast.error(e instanceof Error ? e.message : "Failed to update progress");
+        toastRef.current.error(e instanceof Error ? e.message : "Failed to update progress");
       } finally {
-        toast.remove(toastId);
+        toastRef.current.remove(toastId);
       }
     },
-    [refresh, toast],
+    [refresh],
   );
 
   return { items, loading, error, refresh, setCompleted, completeMany };

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import type { BacktestItem, DayHistoryEntry } from "@/lib/types";
 import { DAILY_TARGET, monthHistory } from "@/lib/backtesting";
@@ -33,6 +33,11 @@ export default function HistoryCalendar({ items, todayKey }: { items: BacktestIt
   );
 
   const hasCompletedDay = days.some((d) => d.status === "completed" || d.status === "partial");
+
+  const todayCellRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    todayCellRef.current?.scrollIntoView({ block: "nearest", inline: "center" });
+  }, [cursor]);
 
   function shiftMonth(delta: number) {
     setCursor((c) => new Date(c.getFullYear(), c.getMonth() + delta, 1));
@@ -102,6 +107,7 @@ export default function HistoryCalendar({ items, todayKey }: { items: BacktestIt
           return (
             <div
               key={day.date}
+              ref={isToday ? todayCellRef : undefined}
               className={cn(
                 "flex min-w-[76px] shrink-0 flex-col items-center gap-1 rounded-xl border px-2.5 py-2.5 text-center",
                 STATUS_CARD[day.status],

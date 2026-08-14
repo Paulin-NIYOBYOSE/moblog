@@ -18,6 +18,28 @@ function formatBytes(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+// Read-only lookup — viewing a pair-year never creates a folder. Returns null
+// until the first screenshot is uploaded there.
+async function lookupFolder(instrument: string, year: number): Promise<string | null> {
+  const res = await fetch(`/api/backtesting/gallery-folder?instrument=${instrument}&year=${year}`, {
+    cache: "no-store",
+  });
+  if (!res.ok) throw new Error("Failed to load gallery folder");
+  return (await res.json()).folderId as string | null;
+}
+
+// Creates the folder if needed. Only called from the upload path, so the write
+// is user-initiated rather than happening on every page view.
+async function ensureFolder(instrument: string, year: number): Promise<string> {
+  const res = await fetch("/api/backtesting/gallery-folder", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ instrument, year }),
+  });
+  if (!res.ok) throw new Error("Failed to prepare gallery folder");
+  return (await res.json()).folderId as string;
+}
+
 export default function BacktestGalleryView({
   instrument,
   year,
@@ -28,6 +50,13 @@ export default function BacktestGalleryView({
   onSelect: (instrument: string, year: number) => void;
 }) {
   const toast = useToast();
+  // Toast identity changes on every toast add/remove (e.g. throughout an
+  // upload's lifecycle) — keep a ref so it doesn't retrigger the folder
+  // resolution effect below and reset `ready` mid-upload.
+  const toastRef = useRef(toast);
+  useEffect(() => {
+    toastRef.current = toast;
+  }, [toast]);
   const [folderId, setFolderId] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
   const [note, setNote] = useState("");
@@ -41,36 +70,38 @@ export default function BacktestGalleryView({
   useEffect(() => {
     let cancelled = false;
     setReady(false);
-    (async () => {
-      try {
-        const res = await fetch("/api/backtesting/gallery-folder", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ instrument, year }),
-        });
-        if (!res.ok) throw new Error("Failed to load gallery folder");
-        const data = await res.json();
-        if (!cancelled) {
-          setFolderId(data.folderId);
-          setReady(true);
-        }
-      } catch (e) {
-        if (!cancelled) toast.error(e instanceof Error ? e.message : "Failed to load gallery folder");
-      }
-    })();
+    lookupFolder(instrument, year)
+      .then((id) => {
+        if (cancelled) return;
+        setFolderId(id);
+        setReady(true);
+      })
+      .catch((e) => {
+        if (!cancelled) toastRef.current.error(e instanceof Error ? e.message : "Failed to load gallery folder");
+      });
     return () => {
       cancelled = true;
     };
-  }, [instrument, year, toast]);
+  }, [instrument, year]);
 
+  // Only fetch once a folder actually exists — a null folderId here means
+  // "no screenshots yet", not "the gallery root".
   const { images, loading, uploading, uploadImages, deleteImage, renameImage, updateCaption } = useMediaData(
     folderId,
-    { enabled: ready },
+    { enabled: ready && folderId !== null },
   );
 
-  function handleFiles(files: FileList | File[]) {
+  async function handleFiles(files: FileList | File[]) {
     const list = Array.from(files).filter((f) => f.type.startsWith("image/"));
-    if (list.length) uploadImages(list, note.trim() || undefined);
+    if (!list.length) return;
+    try {
+      // The folder is created on first upload rather than on page view.
+      const targetFolderId = folderId ?? (await ensureFolder(instrument, year));
+      if (targetFolderId !== folderId) setFolderId(targetFolderId);
+      await uploadImages(list, note.trim() || undefined, targetFolderId);
+    } catch (e) {
+      toastRef.current.error(e instanceof Error ? e.message : "Upload failed");
+    }
   }
 
   return (

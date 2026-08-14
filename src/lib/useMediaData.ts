@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useToast } from "@/components/ToastContext";
 import { compressImage } from "./media/compress";
 import type { Crumb, MediaFolder, MediaImage } from "./media/types";
@@ -23,15 +23,29 @@ export function useMediaData(folderId: string | null, opts?: { enabled?: boolean
   const [error, setError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const toast = useToast();
+  // Toast identity changes on every toast add/remove, so callbacks below read
+  // it via this ref instead of depending on it directly — otherwise e.g. a
+  // toast fired mid-upload would recreate `refresh` and retrigger the mount
+  // effect, flashing the grid back to its loading state.
+  const toastRef = useRef(toast);
+  useEffect(() => {
+    toastRef.current = toast;
+  }, [toast]);
 
-  const refresh = useCallback(async () => {
-    if (!enabled) return;
+  // `overrideFolderId` lets a caller refresh a folder it just created, before
+  // the new id has propagated back through props. Such a call always runs —
+  // the `enabled` gate only suppresses the automatic folderId-driven fetch,
+  // and on a first upload this hook is still disabled (no folder existed yet)
+  // even though the just-uploaded image must be shown.
+  const refresh = useCallback(async (overrideFolderId?: string) => {
+    if (!enabled && !overrideFolderId) return;
+    const target = overrideFolderId ?? folderId;
     try {
       setError(null);
-      const qs = folderId ? `?parentId=${encodeURIComponent(folderId)}` : "";
+      const qs = target ? `?parentId=${encodeURIComponent(target)}` : "";
       const [foldersRes, imagesRes] = await Promise.all([
         fetch(`/api/media/folders${qs}`, { cache: "no-store" }),
-        fetch(`/api/media/images${folderId ? `?folderId=${encodeURIComponent(folderId)}` : ""}`, {
+        fetch(`/api/media/images${target ? `?folderId=${encodeURIComponent(target)}` : ""}`, {
           cache: "no-store",
         }),
       ]);
@@ -44,15 +58,20 @@ export function useMediaData(folderId: string | null, opts?: { enabled?: boolean
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Failed to load gallery";
       setError(msg);
-      toast.error(msg);
+      toastRef.current.error(msg);
     } finally {
       setLoading(false);
     }
-  }, [folderId, enabled, toast]);
+  }, [folderId, enabled]);
 
   useEffect(() => {
     if (!enabled) {
-      setLoading(true);
+      // Disabled means "nothing to show" (not "show the root folder"), so
+      // clear any results carried over from a previously selected folder.
+      setFolders([]);
+      setImages([]);
+      setBreadcrumb([]);
+      setLoading(false);
       return;
     }
     setLoading(true);
@@ -61,7 +80,7 @@ export function useMediaData(folderId: string | null, opts?: { enabled?: boolean
 
   const createFolder = useCallback(
     async (name: string) => {
-      const toastId = toast.loading("Creating folder...");
+      const toastId = toastRef.current.loading("Creating folder...");
       try {
         const res = await fetch("/api/media/folders", {
           method: "POST",
@@ -70,15 +89,15 @@ export function useMediaData(folderId: string | null, opts?: { enabled?: boolean
         });
         if (!res.ok) throw new Error(await parseError(res));
         await refresh();
-        toast.success("Folder created");
+        toastRef.current.success("Folder created");
       } catch (e) {
-        toast.error(e instanceof Error ? e.message : "Failed to create folder");
+        toastRef.current.error(e instanceof Error ? e.message : "Failed to create folder");
         throw e;
       } finally {
-        toast.remove(toastId);
+        toastRef.current.remove(toastId);
       }
     },
-    [folderId, refresh, toast],
+    [folderId, refresh],
   );
 
   const renameFolder = useCallback(
@@ -92,36 +111,39 @@ export function useMediaData(folderId: string | null, opts?: { enabled?: boolean
         if (!res.ok) throw new Error(await parseError(res));
         await refresh();
       } catch (e) {
-        toast.error(e instanceof Error ? e.message : "Failed to rename folder");
+        toastRef.current.error(e instanceof Error ? e.message : "Failed to rename folder");
         throw e;
       }
     },
-    [refresh, toast],
+    [refresh],
   );
 
   const deleteFolder = useCallback(
     async (id: string) => {
-      const toastId = toast.loading("Deleting folder...");
+      const toastId = toastRef.current.loading("Deleting folder...");
       try {
         const res = await fetch(`/api/media/folders/${id}`, { method: "DELETE" });
         if (!res.ok) throw new Error(await parseError(res));
         await refresh();
-        toast.success("Folder deleted");
+        toastRef.current.success("Folder deleted");
       } catch (e) {
-        toast.error(e instanceof Error ? e.message : "Failed to delete folder");
+        toastRef.current.error(e instanceof Error ? e.message : "Failed to delete folder");
         throw e;
       } finally {
-        toast.remove(toastId);
+        toastRef.current.remove(toastId);
       }
     },
-    [refresh, toast],
+    [refresh],
   );
 
   const uploadImages = useCallback(
-    async (files: File[], caption?: string) => {
+    // `targetFolderId` overrides the hook's folderId — used when the caller
+    // has just created the destination folder and state hasn't updated yet.
+    async (files: File[], caption?: string, targetFolderId?: string) => {
       if (files.length === 0) return;
+      const destination = targetFolderId ?? folderId;
       setUploading(true);
-      const toastId = toast.loading(`Uploading ${files.length} image${files.length === 1 ? "" : "s"}...`);
+      const toastId = toastRef.current.loading(`Uploading ${files.length} image${files.length === 1 ? "" : "s"}...`);
       let succeeded = 0;
       try {
         for (const file of files) {
@@ -129,7 +151,7 @@ export function useMediaData(folderId: string | null, opts?: { enabled?: boolean
             const { blob, width, height } = await compressImage(file);
             const form = new FormData();
             form.append("file", blob, file.name);
-            if (folderId) form.append("folderId", folderId);
+            if (destination) form.append("folderId", destination);
             form.append("name", file.name);
             form.append("width", String(width));
             form.append("height", String(height));
@@ -138,17 +160,17 @@ export function useMediaData(folderId: string | null, opts?: { enabled?: boolean
             if (!res.ok) throw new Error(await parseError(res));
             succeeded += 1;
           } catch (e) {
-            toast.error(`${file.name}: ${e instanceof Error ? e.message : "upload failed"}`);
+            toastRef.current.error(`${file.name}: ${e instanceof Error ? e.message : "upload failed"}`);
           }
         }
-        await refresh();
-        if (succeeded > 0) toast.success(`Uploaded ${succeeded} image${succeeded === 1 ? "" : "s"}`);
+        await refresh(destination ?? undefined);
+        if (succeeded > 0) toastRef.current.success(`Uploaded ${succeeded} image${succeeded === 1 ? "" : "s"}`);
       } finally {
-        toast.remove(toastId);
+        toastRef.current.remove(toastId);
         setUploading(false);
       }
     },
-    [folderId, refresh, toast],
+    [folderId, refresh],
   );
 
   const deleteImage = useCallback(
@@ -157,13 +179,13 @@ export function useMediaData(folderId: string | null, opts?: { enabled?: boolean
         const res = await fetch(`/api/media/images/${id}`, { method: "DELETE" });
         if (!res.ok) throw new Error(await parseError(res));
         await refresh();
-        toast.success("Image deleted");
+        toastRef.current.success("Image deleted");
       } catch (e) {
-        toast.error(e instanceof Error ? e.message : "Failed to delete image");
+        toastRef.current.error(e instanceof Error ? e.message : "Failed to delete image");
         throw e;
       }
     },
-    [refresh, toast],
+    [refresh],
   );
 
   const renameImage = useCallback(
@@ -177,11 +199,11 @@ export function useMediaData(folderId: string | null, opts?: { enabled?: boolean
         if (!res.ok) throw new Error(await parseError(res));
         await refresh();
       } catch (e) {
-        toast.error(e instanceof Error ? e.message : "Failed to rename image");
+        toastRef.current.error(e instanceof Error ? e.message : "Failed to rename image");
         throw e;
       }
     },
-    [refresh, toast],
+    [refresh],
   );
 
   const updateCaption = useCallback(
@@ -195,11 +217,11 @@ export function useMediaData(folderId: string | null, opts?: { enabled?: boolean
         if (!res.ok) throw new Error(await parseError(res));
         await refresh();
       } catch (e) {
-        toast.error(e instanceof Error ? e.message : "Failed to update note");
+        toastRef.current.error(e instanceof Error ? e.message : "Failed to update note");
         throw e;
       }
     },
-    [refresh, toast],
+    [refresh],
   );
 
   return {
