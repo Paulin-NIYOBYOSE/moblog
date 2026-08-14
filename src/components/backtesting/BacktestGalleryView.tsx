@@ -152,9 +152,8 @@ export default function BacktestGalleryView({
             )}
           </div>
           <p className="mt-0.5 text-sm text-muted">
-            {isOverall
-              ? "Combined analytics across all 28 pairs"
-              : "Analytics across the full 2020–2025 run"}
+            {isOverall ? "Combined analytics across all 28 pairs" : "Analytics across the full 2020–2025 run"}
+            {images.length > 0 && ` · ${images.length} screenshot${images.length === 1 ? "" : "s"}`}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -213,7 +212,7 @@ export default function BacktestGalleryView({
               <p className="mt-1 max-w-sm text-sm text-muted">
                 {isOverall
                   ? "Upload your combined all-pairs analytics here once every pair is done."
-                  : "Drop this pair's analytics screenshot here, or use the upload button above."}
+                  : "Drop this pair's analytics screenshots here, or use the upload button above. You can add as many as you like."}
               </p>
             </div>
           ) : (

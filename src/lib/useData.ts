@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useToast } from "@/components/ToastContext";
 import type { Account, AccountInput, Trade, TradeInput, Content, ContentInput } from "./types";
 
@@ -20,6 +20,14 @@ export function useData() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const toast = useToast();
+  // ToastProvider builds a fresh `toast` object on every render, so depending
+  // on it directly would rebuild `refresh` each time a toast fires — and a
+  // failed fetch showing an error toast would then retrigger that same fetch
+  // in a loop. Read it through a ref instead.
+  const toastRef = useRef(toast);
+  useEffect(() => {
+    toastRef.current = toast;
+  }, [toast]);
 
   const refreshAccounts = useCallback(async () => {
     const res = await fetch("/api/accounts", { cache: "no-store" });
@@ -49,18 +57,18 @@ export function useData() {
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Failed to load data";
       setError(msg);
-      toast.error(msg);
+      toastRef.current.error(msg);
     } finally {
       setLoading(false);
     }
-  }, [refreshAccounts, refreshTrades, refreshContent, toast]);
+  }, [refreshAccounts, refreshTrades, refreshContent]);
 
   useEffect(() => {
     refresh();
   }, [refresh]);
 
   const createAccount = useCallback(async (input: AccountInput) => {
-    const toastId = toast.loading("Creating account...");
+    const toastId = toastRef.current.loading("Creating account...");
     try {
       const res = await fetch("/api/accounts", {
         method: "POST",
@@ -69,18 +77,18 @@ export function useData() {
       });
       if (!res.ok) throw new Error(await parseError(res));
       await refreshAccounts();
-      toast.success("Account created");
+      toastRef.current.success("Account created");
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed to create account");
+      toastRef.current.error(e instanceof Error ? e.message : "Failed to create account");
       throw e;
     } finally {
-      toast.remove(toastId);
+      toastRef.current.remove(toastId);
     }
-  }, [refreshAccounts, toast]);
+  }, [refreshAccounts]);
 
   const updateAccount = useCallback(
     async (id: string, input: AccountInput) => {
-      const toastId = toast.loading("Updating account...");
+      const toastId = toastRef.current.loading("Updating account...");
       try {
         const res = await fetch(`/api/accounts/${id}`, {
           method: "PUT",
@@ -89,38 +97,38 @@ export function useData() {
         });
         if (!res.ok) throw new Error(await parseError(res));
         await refreshAccounts();
-        toast.success("Account updated");
+        toastRef.current.success("Account updated");
       } catch (e) {
-        toast.error(e instanceof Error ? e.message : "Failed to update account");
+        toastRef.current.error(e instanceof Error ? e.message : "Failed to update account");
         throw e;
       } finally {
-        toast.remove(toastId);
+        toastRef.current.remove(toastId);
       }
     },
-    [refreshAccounts, toast],
+    [refreshAccounts],
   );
 
   const deleteAccount = useCallback(
     async (id: string) => {
-      const toastId = toast.loading("Deleting account...");
+      const toastId = toastRef.current.loading("Deleting account...");
       try {
         const res = await fetch(`/api/accounts/${id}`, { method: "DELETE" });
         if (!res.ok) throw new Error(await parseError(res));
         await refreshAccounts();
-        toast.success("Account deleted");
+        toastRef.current.success("Account deleted");
       } catch (e) {
-        toast.error(e instanceof Error ? e.message : "Failed to delete account");
+        toastRef.current.error(e instanceof Error ? e.message : "Failed to delete account");
         throw e;
       } finally {
-        toast.remove(toastId);
+        toastRef.current.remove(toastId);
       }
     },
-    [refreshAccounts, toast],
+    [refreshAccounts],
   );
 
   const createTrade = useCallback(
     async (input: TradeInput) => {
-      const toastId = toast.loading("Saving trade...");
+      const toastId = toastRef.current.loading("Saving trade...");
       try {
         const res = await fetch("/api/trades", {
           method: "POST",
@@ -129,20 +137,20 @@ export function useData() {
         });
         if (!res.ok) throw new Error(await parseError(res));
         await refreshTrades(input.accountId);
-        toast.success("Trade saved");
+        toastRef.current.success("Trade saved");
       } catch (e) {
-        toast.error(e instanceof Error ? e.message : "Failed to save trade");
+        toastRef.current.error(e instanceof Error ? e.message : "Failed to save trade");
         throw e;
       } finally {
-        toast.remove(toastId);
+        toastRef.current.remove(toastId);
       }
     },
-    [refreshTrades, toast],
+    [refreshTrades],
   );
 
   const updateTrade = useCallback(
     async (id: string, input: TradeInput) => {
-      const toastId = toast.loading("Updating trade...");
+      const toastId = toastRef.current.loading("Updating trade...");
       try {
         const res = await fetch(`/api/trades/${id}`, {
           method: "PUT",
@@ -151,38 +159,38 @@ export function useData() {
         });
         if (!res.ok) throw new Error(await parseError(res));
         await refreshTrades(input.accountId);
-        toast.success("Trade updated");
+        toastRef.current.success("Trade updated");
       } catch (e) {
-        toast.error(e instanceof Error ? e.message : "Failed to update trade");
+        toastRef.current.error(e instanceof Error ? e.message : "Failed to update trade");
         throw e;
       } finally {
-        toast.remove(toastId);
+        toastRef.current.remove(toastId);
       }
     },
-    [refreshTrades, toast],
+    [refreshTrades],
   );
 
   const deleteTrade = useCallback(
     async (id: string, accountId: string) => {
-      const toastId = toast.loading("Deleting trade...");
+      const toastId = toastRef.current.loading("Deleting trade...");
       try {
         const res = await fetch(`/api/trades/${id}`, { method: "DELETE" });
         if (!res.ok) throw new Error(await parseError(res));
         await refreshTrades(accountId);
-        toast.success("Trade deleted");
+        toastRef.current.success("Trade deleted");
       } catch (e) {
-        toast.error(e instanceof Error ? e.message : "Failed to delete trade");
+        toastRef.current.error(e instanceof Error ? e.message : "Failed to delete trade");
         throw e;
       } finally {
-        toast.remove(toastId);
+        toastRef.current.remove(toastId);
       }
     },
-    [refreshTrades, toast],
+    [refreshTrades],
   );
 
   const createContent = useCallback(
     async (input: ContentInput) => {
-      const toastId = toast.loading("Creating content...");
+      const toastId = toastRef.current.loading("Creating content...");
       try {
         const res = await fetch("/api/content", {
           method: "POST",
@@ -191,20 +199,20 @@ export function useData() {
         });
         if (!res.ok) throw new Error(await parseError(res));
         await refreshContent();
-        toast.success("Content created");
+        toastRef.current.success("Content created");
       } catch (e) {
-        toast.error(e instanceof Error ? e.message : "Failed to create content");
+        toastRef.current.error(e instanceof Error ? e.message : "Failed to create content");
         throw e;
       } finally {
-        toast.remove(toastId);
+        toastRef.current.remove(toastId);
       }
     },
-    [refreshContent, toast],
+    [refreshContent],
   );
 
   const updateContent = useCallback(
     async (id: string, input: ContentInput) => {
-      const toastId = toast.loading("Updating content...");
+      const toastId = toastRef.current.loading("Updating content...");
       try {
         const res = await fetch(`/api/content/${id}`, {
           method: "PUT",
@@ -213,33 +221,33 @@ export function useData() {
         });
         if (!res.ok) throw new Error(await parseError(res));
         await refreshContent();
-        toast.success("Content updated");
+        toastRef.current.success("Content updated");
       } catch (e) {
-        toast.error(e instanceof Error ? e.message : "Failed to update content");
+        toastRef.current.error(e instanceof Error ? e.message : "Failed to update content");
         throw e;
       } finally {
-        toast.remove(toastId);
+        toastRef.current.remove(toastId);
       }
     },
-    [refreshContent, toast],
+    [refreshContent],
   );
 
   const deleteContent = useCallback(
     async (id: string) => {
-      const toastId = toast.loading("Deleting content...");
+      const toastId = toastRef.current.loading("Deleting content...");
       try {
         const res = await fetch(`/api/content/${id}`, { method: "DELETE" });
         if (!res.ok) throw new Error(await parseError(res));
         await refreshContent();
-        toast.success("Content deleted");
+        toastRef.current.success("Content deleted");
       } catch (e) {
-        toast.error(e instanceof Error ? e.message : "Failed to delete content");
+        toastRef.current.error(e instanceof Error ? e.message : "Failed to delete content");
         throw e;
       } finally {
-        toast.remove(toastId);
+        toastRef.current.remove(toastId);
       }
     },
-    [refreshContent, toast],
+    [refreshContent],
   );
 
   return {

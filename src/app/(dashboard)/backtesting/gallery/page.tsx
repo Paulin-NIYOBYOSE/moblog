@@ -30,7 +30,7 @@ function BacktestGalleryPageInner() {
     <div>
       <PageHeader
         title="Backtesting Gallery"
-        subtitle="One analytics screenshot per pair across all years, plus your combined all-pairs view"
+        subtitle="Analytics screenshots for each pair across all years, plus your combined all-pairs view"
       />
       <BacktestGalleryView target={target} onSelect={setTarget} />
     </div>
