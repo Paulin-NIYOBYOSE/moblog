@@ -53,7 +53,7 @@ export default function StatCards({
   const consistency = computeConsistencyScore(trades);
 
   return (
-    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-10">
+    <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-10">
       <StatTile label="Balance" icon={Wallet} accent="muted">
         <div className="mt-2 min-w-0 truncate text-xl font-semibold tracking-tight tabular-nums">
           {formatCurrency(stats.currentBalance)}

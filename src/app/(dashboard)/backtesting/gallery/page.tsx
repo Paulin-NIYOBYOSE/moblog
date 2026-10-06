@@ -29,6 +29,7 @@ function BacktestGalleryPageInner() {
   return (
     <div>
       <PageHeader
+        eyebrow="Research · screenshots"
         title="Backtesting Gallery"
         subtitle="Analytics screenshots for each pair across all years, plus your combined all-pairs view"
       />

@@ -76,8 +76,8 @@ export default function CustomSelect({
         />
       </button>
       {open && (
-        <div className="absolute z-50 mt-1 w-full overflow-hidden rounded-xl border border-border bg-surface shadow-xl">
-          <ul className="max-h-60 overflow-y-auto py-1">
+        <div className="absolute z-50 mt-1 w-full overflow-hidden animate-pop-in rounded-xl border border-border bg-card shadow-xl">
+          <ul className="max-h-60 overflow-y-auto p-1">
             {options.map((option) => (
               <li key={option.value}>
                 <button
@@ -87,7 +87,7 @@ export default function CustomSelect({
                     setOpen(false);
                   }}
                   className={cn(
-                    "flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm transition-colors hover:bg-surface-2",
+                    "flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-left text-sm transition-colors hover:bg-surface-2",
                     option.value === value
                       ? "bg-accent/10 text-accent"
                       : "text-foreground",

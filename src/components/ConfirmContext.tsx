@@ -69,7 +69,7 @@ export function ConfirmProvider({ children }: { children: React.ReactNode }) {
                 <button
                   type="button"
                   onClick={() => handleClose(false)}
-                  className="flex-1 rounded-lg border border-border px-4 py-2 text-sm font-medium transition-colors hover:bg-surface-2"
+                  className="btn btn-secondary flex-1"
                 >
                   {state.options.cancelText || "Cancel"}
                 </button>

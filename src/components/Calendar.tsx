@@ -126,7 +126,7 @@ export default function Calendar({
           <button
             type="button"
             onClick={goToday}
-            className="rounded-lg border border-border px-2.5 py-1.5 text-sm font-medium transition-colors hover:bg-surface-2"
+            className="btn btn-secondary btn-sm"
           >
             Today
           </button>

@@ -2,10 +2,10 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { LineChart, Menu, Plus, X } from "lucide-react";
+import { Menu, Plus, X } from "lucide-react";
 import { useData, logout } from "@/lib/useData";
 import { useSelectedAccount } from "./AccountContext";
-import Sidebar from "./Sidebar";
+import Sidebar, { BrandMark } from "./Sidebar";
 import ThemeToggle from "./ThemeToggle";
 import type { Account } from "@/lib/types";
 
@@ -45,7 +45,10 @@ export default function AppLayout({
           setSelectedAccountId(a.id);
           setMobileMenuOpen(false);
         }}
-        onAddTrade={onAddTrade}
+        onAddTrade={() => {
+          onAddTrade();
+          setMobileMenuOpen(false);
+        }}
         onAddAccount={() => {
           onAddAccount();
           setMobileMenuOpen(false);
@@ -64,39 +67,30 @@ export default function AppLayout({
         onCloseMobile={() => setMobileMenuOpen(false)}
       />
 
-      <div className="lg:pl-64">
+      <div className="page-glow min-h-screen lg:pl-[17rem]">
         {/* Mobile top bar */}
-        <header className="sticky top-0 z-30 flex items-center justify-between border-b border-border bg-background/80 px-4 py-3 backdrop-blur lg:hidden">
-          <div className="flex items-center gap-2">
+        <header className="sticky top-0 z-30 flex items-center justify-between border-b border-border bg-background/75 px-4 py-2.5 backdrop-blur-xl lg:hidden">
+          <div className="flex items-center gap-2.5">
             <button
               type="button"
               onClick={() => setMobileMenuOpen((s) => !s)}
-              className="flex h-8 w-8 items-center justify-center rounded-lg text-foreground hover:bg-surface-2"
+              aria-label="Toggle menu"
+              className="flex h-9 w-9 items-center justify-center rounded-lg border border-border bg-card text-foreground"
             >
-              {mobileMenuOpen ? (
-                <X className="h-5 w-5" />
-              ) : (
-                <Menu className="h-5 w-5" />
-              )}
+              {mobileMenuOpen ? <X className="h-4.5 w-4.5" /> : <Menu className="h-4.5 w-4.5" />}
             </button>
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent text-accent-foreground">
-              <LineChart className="h-4.5 w-4.5" strokeWidth={2.5} />
-            </div>
-            <span className="text-base font-semibold">Moblog</span>
+            <BrandMark size="sm" />
+            <span className="font-display text-xl tracking-tight">Moblog</span>
           </div>
           <div className="flex items-center gap-2">
             <ThemeToggle />
-            <button
-              type="button"
-              onClick={onAddTrade}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-3 py-2 text-sm font-medium text-accent-foreground"
-            >
+            <button type="button" onClick={onAddTrade} className="btn btn-primary btn-sm">
               <Plus className="h-4 w-4" /> Add
             </button>
           </div>
         </header>
 
-        <main className="mx-auto max-w-[1400px] px-4 py-6 sm:px-6 lg:px-8">
+        <main className="mx-auto max-w-[1440px] px-4 py-6 sm:px-6 sm:py-8 lg:px-10">
           {children}
         </main>
       </div>

@@ -44,10 +44,15 @@ export default function BacktestingPage() {
   return (
     <div>
       <PageHeader
+        eyebrow={
+          <>
+            <CalendarCheck className="h-3 w-3" /> Research · 2020–2025
+          </>
+        }
         title="Backtesting Series"
         subtitle="Track your 2020–2025 backtesting journey across 28 instruments"
         actions={
-          <span className="rounded-lg border border-border bg-surface-2 px-3 py-1.5 text-sm font-medium">
+          <span className="rounded-[0.65rem] border border-border bg-card px-3 py-1.5 text-sm font-medium shadow-xs">
             Today: {formatDateLong(today)}
           </span>
         }

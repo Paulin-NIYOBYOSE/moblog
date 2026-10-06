@@ -49,7 +49,7 @@ export default function InstrumentGrid({
             </div>
             <div className="h-1.5 w-full overflow-hidden rounded-full bg-surface">
               <div
-                className="h-full rounded-full bg-accent transition-all duration-500"
+                className="h-full rounded-full bg-gradient-to-r from-accent to-accent-2 transition-all duration-700"
                 style={{ width: `${Math.min(100, inst.percent)}%` }}
               />
             </div>

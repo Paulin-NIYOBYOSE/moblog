@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { AlertTriangle, Search, SlidersHorizontal, X } from "lucide-react";
+import { AlertTriangle, ListOrdered, Plus, Search, SlidersHorizontal, X } from "lucide-react";
 import { useData } from "@/lib/useData";
 import { useSelectedAccount } from "@/components/AccountContext";
 import { useModal } from "@/components/ModalContext";
@@ -83,8 +83,18 @@ export default function JournalPage() {
   return (
     <div>
       <PageHeader
+        eyebrow={
+          <>
+            <ListOrdered className="h-3 w-3" /> Trade log
+          </>
+        }
         title="Trades"
-        subtitle={selectedAccount ? selectedAccount.name : "Loading accounts..."}
+        subtitle={selectedAccount ? `${selectedAccount.name} · ${filteredTrades.length} trade${filteredTrades.length === 1 ? "" : "s"}` : "Loading accounts..."}
+        actions={
+          <button type="button" onClick={() => openAdd()} className="btn btn-primary">
+            <Plus className="h-4 w-4" /> Add trade
+          </button>
+        }
       />
 
       {error && (
@@ -167,7 +177,7 @@ export default function JournalPage() {
               setPage(1);
             }}
             placeholder="Search pair, setup, comment, exit logic..."
-            className="input pl-9"
+            className="input h-9 pl-9"
           />
           {search && (
             <button
@@ -199,12 +209,7 @@ export default function JournalPage() {
         <button
           type="button"
           onClick={() => setShowFilters((s) => !s)}
-          className={cn(
-            "inline-flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm font-medium transition-colors",
-            showFilters
-              ? "bg-surface-2 text-foreground"
-              : "text-muted hover:bg-surface-2 hover:text-foreground",
-          )}
+          className={cn("btn btn-secondary", showFilters && "border-accent/50 text-accent")}
         >
           <SlidersHorizontal className="h-4 w-4" /> Filters
         </button>
@@ -231,7 +236,7 @@ export default function JournalPage() {
                   type="button"
                   disabled={page === 1}
                   onClick={() => setPage((p) => p - 1)}
-                  className="rounded-lg border border-border px-3 py-1.5 font-medium transition-colors disabled:opacity-40 hover:bg-surface-2"
+                  className="btn btn-secondary btn-sm"
                 >
                   Previous
                 </button>
@@ -242,7 +247,7 @@ export default function JournalPage() {
                   type="button"
                   disabled={page === totalPages}
                   onClick={() => setPage((p) => p + 1)}
-                  className="rounded-lg border border-border px-3 py-1.5 font-medium transition-colors disabled:opacity-40 hover:bg-surface-2"
+                  className="btn btn-secondary btn-sm"
                 >
                   Next
                 </button>

@@ -289,3 +289,81 @@ export interface DayHistoryEntry {
   items: BacktestItem[];
   status: "completed" | "partial" | "missed" | "upcoming";
 }
+
+// ---------------------------------------------------------------------------
+// Attachments (images on journal entries and Backtesting v2 sessions)
+// ---------------------------------------------------------------------------
+
+export interface Attachment {
+  id: string;
+  name: string;
+  mimeType: string;
+  size: number;
+  width: number | null;
+  height: number | null;
+  caption: string | null;
+  createdAt: string;
+}
+
+export type AttachmentOwner = { journalEntryId: string } | { btItemId: string };
+
+// ---------------------------------------------------------------------------
+// Journal (src/lib/journal.ts)
+// ---------------------------------------------------------------------------
+
+export interface JournalEntry {
+  id: string;
+  day: string; // yyyy-mm-dd
+  accountId: string | null;
+  title: string | null;
+  mood: number | null;
+  discipline: number | null;
+  followedPlan: boolean | null;
+  emotionsBefore: string[];
+  emotionsAfter: string[];
+  mistakes: string[];
+  tags: string[];
+  tradeIds: string[];
+  checklist: string[];
+  premarket: string | null;
+  notes: string | null;
+  lessons: string | null;
+  attachments: Attachment[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface JournalEntryInput {
+  day: string;
+  accountId: string | null;
+  title?: string | null;
+  mood?: number | null;
+  discipline?: number | null;
+  followedPlan?: boolean | null;
+  emotionsBefore: string[];
+  emotionsAfter: string[];
+  mistakes: string[];
+  tags: string[];
+  tradeIds: string[];
+  checklist: string[];
+  premarket?: string | null;
+  notes?: string | null;
+  lessons?: string | null;
+}
+
+// ---------------------------------------------------------------------------
+// Backtesting v2 — progress tracker (src/lib/backtestV2.ts)
+// ---------------------------------------------------------------------------
+
+export interface BtItem {
+  id: string;
+  instrument: string;
+  year: number;
+  sequence: number;
+  completed: boolean;
+  completedAt: string | null;
+  notes: string | null;
+  attachments: Attachment[];
+  createdAt: string;
+  updatedAt: string;
+}

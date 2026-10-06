@@ -1,6 +1,6 @@
 "use client";
 
-import { Bar, BarChart, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import type { WeekdayAggregate } from "@/lib/types";
 import { formatPercent, formatSignedCurrency } from "@/lib/utils";
 
@@ -31,6 +31,7 @@ export default function WeekdayBars({ data }: { data: WeekdayAggregate[] }) {
     <div className="h-48 w-full">
       <ResponsiveContainer width="100%" height="100%">
         <BarChart data={data} margin={{ top: 8, right: 4, left: 4, bottom: 0 }}>
+          <CartesianGrid vertical={false} stroke="var(--chart-grid)" />
           <XAxis
             dataKey="label"
             axisLine={{ stroke: "var(--chart-axis)" }}
@@ -39,7 +40,7 @@ export default function WeekdayBars({ data }: { data: WeekdayAggregate[] }) {
           />
           <YAxis hide />
           <Tooltip content={<WeekdayTooltip />} cursor={{ fill: "var(--surface-2)" }} />
-          <Bar dataKey="pnl" radius={[4, 4, 0, 0]} isAnimationActive animationDuration={500}>
+          <Bar dataKey="pnl" maxBarSize={28} radius={[4, 4, 0, 0]} isAnimationActive animationDuration={500}>
             {data.map((d) => (
               <Cell
                 key={d.weekday}

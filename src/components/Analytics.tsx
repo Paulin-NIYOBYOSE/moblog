@@ -2,7 +2,8 @@
 
 import type { Stats } from "@/lib/types";
 import { formatSignedCurrency } from "@/lib/utils";
-import Card from "./ui/Card";
+import Card, { CardHeader } from "./ui/Card";
+import { PieChart as PieIcon } from "lucide-react";
 import WinLossPie from "./charts/WinLossPie";
 
 function Row({
@@ -34,7 +35,7 @@ function Row({
 export default function Analytics({ stats }: { stats: Stats }) {
   return (
     <Card id="analytics" scrollMt padding="lg">
-      <h3 className="text-sm font-semibold">Performance breakdown</h3>
+      <CardHeader icon={PieIcon} title="Performance breakdown" subtitle="Streaks, extremes and per-trade averages" className="mb-0" />
 
       <div className="mt-4 flex flex-col gap-5 sm:flex-row sm:items-center">
         <WinLossPie

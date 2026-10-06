@@ -102,7 +102,7 @@ export default function GalleryBrowser({
           <button
             type="button"
             onClick={() => setNewFolderOpen(true)}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs font-medium transition-colors hover:bg-surface-2"
+            className="btn btn-secondary btn-sm"
           >
             <FolderPlus className="h-3.5 w-3.5" /> New folder
           </button>
@@ -110,7 +110,7 @@ export default function GalleryBrowser({
             type="button"
             onClick={() => fileInputRef.current?.click()}
             disabled={uploading}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-xs font-medium text-accent-foreground transition-transform hover:opacity-95 active:scale-[0.98] disabled:opacity-60"
+            className="btn btn-primary btn-sm"
           >
             {uploading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />}
             Upload images

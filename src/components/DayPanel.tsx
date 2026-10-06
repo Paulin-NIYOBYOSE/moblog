@@ -170,7 +170,7 @@ function DayPanelContent({
           <button
             type="button"
             onClick={() => onAddForDay(day)}
-            className="flex w-full items-center justify-center gap-2 rounded-lg bg-accent px-4 py-2.5 text-sm font-medium text-accent-foreground transition-transform hover:opacity-95 active:scale-[0.98]"
+            className="btn btn-primary w-full py-2.5"
           >
             <Plus className="h-4 w-4" /> Add trade for this day
           </button>

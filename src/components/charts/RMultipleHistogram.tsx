@@ -1,6 +1,6 @@
 "use client";
 
-import { Bar, BarChart, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import type { RMultipleBucket } from "@/lib/types";
 import { formatSignedCurrency } from "@/lib/utils";
 
@@ -40,6 +40,7 @@ export default function RMultipleHistogram({ data }: { data: RMultipleBucket[] }
     <div className="h-48 w-full">
       <ResponsiveContainer width="100%" height="100%">
         <BarChart data={data} margin={{ top: 8, right: 4, left: 4, bottom: 0 }}>
+          <CartesianGrid vertical={false} stroke="var(--chart-grid)" />
           <XAxis
             dataKey="bucket"
             interval={1}
@@ -49,7 +50,7 @@ export default function RMultipleHistogram({ data }: { data: RMultipleBucket[] }
           />
           <YAxis hide />
           <Tooltip content={<RTooltip />} cursor={{ fill: "var(--surface-2)" }} />
-          <Bar dataKey="count" radius={[3, 3, 0, 0]} isAnimationActive animationDuration={500}>
+          <Bar dataKey="count" maxBarSize={24} radius={[4, 4, 0, 0]} isAnimationActive animationDuration={500}>
             {data.map((d, i) => (
               <Cell
                 key={i}

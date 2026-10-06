@@ -47,7 +47,7 @@ export default function InstrumentDetailModal({
 
             <div className="mb-4 h-1.5 w-full overflow-hidden rounded-full bg-surface-2">
               <div
-                className="h-full rounded-full bg-accent transition-all duration-500"
+                className="h-full rounded-full bg-gradient-to-r from-accent to-accent-2 transition-all duration-700"
                 style={{ width: `${Math.min(100, instrument.percent)}%` }}
               />
             </div>
@@ -81,7 +81,7 @@ export default function InstrumentDetailModal({
             <button
               type="button"
               onClick={() => onViewGallery(instrument.instrument)}
-              className="mt-4 flex w-full items-center justify-center gap-2 rounded-lg border border-border px-4 py-2 text-sm font-medium transition-colors hover:bg-surface-2"
+              className="btn btn-secondary mt-4 w-full"
             >
               <Camera className="h-4 w-4" />
               View {instrument.instrument} screenshots

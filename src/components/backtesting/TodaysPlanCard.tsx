@@ -83,7 +83,7 @@ export default function TodaysPlanCard({
           type="button"
           onClick={handleCompleteAll}
           disabled={submitting}
-          className="mt-4 flex w-full items-center justify-center gap-2 rounded-lg bg-accent px-4 py-2.5 text-sm font-medium text-accent-foreground transition-transform hover:opacity-95 active:scale-[0.98] disabled:opacity-60"
+          className="btn btn-primary mt-4 w-full py-2.5"
         >
           <Check className="h-4 w-4" />
           Mark Today&apos;s Work as Completed

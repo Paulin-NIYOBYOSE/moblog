@@ -3,15 +3,16 @@
 import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
 
-type Accent = "profit" | "loss" | "muted" | "accent" | "warning" | "info";
+type Accent = "profit" | "loss" | "muted" | "accent" | "warning" | "info" | "gold";
 
-const ACCENT_TEXT: Record<Accent, string> = {
-  profit: "text-profit",
-  loss: "text-loss",
-  muted: "text-muted",
-  accent: "text-accent",
-  warning: "text-warning",
-  info: "text-info",
+const ACCENT_CHIP: Record<Accent, string> = {
+  profit: "bg-profit-soft text-profit",
+  loss: "bg-loss-soft text-loss",
+  muted: "bg-surface-2 text-muted",
+  accent: "bg-accent-soft text-accent",
+  warning: "bg-warning-soft text-warning",
+  info: "bg-info-soft text-info",
+  gold: "bg-gold-soft text-gold",
 };
 
 export default function StatTile({
@@ -30,17 +31,18 @@ export default function StatTile({
   return (
     <div
       className={cn(
-        "group relative overflow-hidden rounded-2xl border border-border bg-card p-4 shadow-sm transition-all duration-200 hover:border-border/80 hover:shadow-md sm:p-5",
+        "group relative overflow-hidden rounded-2xl border border-border bg-card p-4 shadow-card transition-all duration-200 hover:-translate-y-px hover:border-border-strong hover:shadow-md",
         className,
       )}
     >
-      <div className="absolute right-0 top-0 h-24 w-24 -translate-y-1/2 translate-x-1/2 rounded-full bg-accent/5 opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
       <div className="relative">
         <div className="flex items-center justify-between gap-2">
-          <span className="truncate text-xs font-medium uppercase tracking-wide text-muted">
+          <span className="truncate text-[0.7rem] font-semibold uppercase tracking-[0.08em] text-muted">
             {label}
           </span>
-          <Icon className={cn("h-4 w-4 shrink-0", ACCENT_TEXT[accent])} />
+          <span className={cn("flex h-6 w-6 shrink-0 items-center justify-center rounded-md", ACCENT_CHIP[accent])}>
+            <Icon className="h-3.5 w-3.5" strokeWidth={2.25} />
+          </span>
         </div>
         {children}
       </div>

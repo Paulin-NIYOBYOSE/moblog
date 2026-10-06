@@ -2,7 +2,7 @@
 
 import { useMemo } from "react";
 import Link from "next/link";
-import { AlertTriangle, ArrowRight, Plus, TrendingUp } from "lucide-react";
+import { AlertTriangle, ArrowRight, History, LayoutDashboard, Plus, Wallet } from "lucide-react";
 import { useData } from "@/lib/useData";
 import { useSelectedAccount } from "@/components/AccountContext";
 import { useModal } from "@/components/ModalContext";
@@ -11,7 +11,8 @@ import EquityCurve from "@/components/EquityCurve";
 import MonthlyChart from "@/components/MonthlyChart";
 import OpenPositions from "@/components/OpenPositions";
 import JournalTable from "@/components/JournalTable";
-import Card from "@/components/ui/Card";
+import Card, { CardHeader } from "@/components/ui/Card";
+import TodayStrip from "@/components/TodayStrip";
 import PageHeader from "@/components/ui/PageHeader";
 import Skeleton from "@/components/ui/Skeleton";
 import {
@@ -43,23 +44,22 @@ export default function DashboardPage() {
   return (
     <div>
       <PageHeader
+        eyebrow={
+          <>
+            <LayoutDashboard className="h-3 w-3" /> {greeting()} ·{" "}
+            {new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}
+          </>
+        }
         title="Dashboard"
         subtitle={selectedAccount ? selectedAccount.name : "Loading accounts..."}
         actions={
           <>
-            <button
-              type="button"
-              onClick={() => openAdd()}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-3 py-2 text-sm font-medium text-accent-foreground shadow-sm transition-transform active:scale-[0.98]"
-            >
-              <Plus className="h-4 w-4" /> Add trade
-            </button>
-            <Link
-              href="/journal"
-              className="inline-flex items-center gap-1.5 text-sm font-medium text-muted transition-colors hover:text-foreground"
-            >
+            <Link href="/journal" className="btn btn-secondary">
               View all trades <ArrowRight className="h-4 w-4" />
             </Link>
+            <button type="button" onClick={() => openAdd()} className="btn btn-primary">
+              <Plus className="h-4 w-4" /> Add trade
+            </button>
           </>
         }
       />
@@ -75,6 +75,8 @@ export default function DashboardPage() {
         <LoadingState />
       ) : (
         <div className="space-y-5">
+          <TodayStrip />
+
           <StatCards stats={stats} trades={filteredTrades} startingBalance={startingBalance} />
 
           <div className="grid grid-cols-1 gap-5">
@@ -84,10 +86,7 @@ export default function DashboardPage() {
 
           <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
             <Card padding="lg" className="lg:col-span-1">
-              <div className="mb-3 flex items-center gap-2">
-                <TrendingUp className="h-4 w-4 text-accent" />
-                <h3 className="text-sm font-semibold">Quick summary</h3>
-              </div>
+              <CardHeader icon={Wallet} title="Quick summary" subtitle="Account at a glance" />
               <div className="space-y-3 text-sm">
                 <div className="flex items-center justify-between border-b border-border pb-2">
                   <span className="text-muted">Starting balance</span>
@@ -133,13 +132,13 @@ export default function DashboardPage() {
               <div className="mt-4 flex gap-2">
                 <Link
                   href="/journal"
-                  className="flex-1 rounded-lg border border-border px-3 py-2 text-center text-sm font-medium transition-colors hover:bg-surface-2"
+                  className="btn btn-secondary flex-1"
                 >
                   Trades
                 </Link>
                 <Link
                   href="/analytics"
-                  className="flex-1 rounded-lg border border-border px-3 py-2 text-center text-sm font-medium transition-colors hover:bg-surface-2"
+                  className="btn btn-secondary flex-1"
                 >
                   Analytics
                 </Link>
@@ -151,13 +150,12 @@ export default function DashboardPage() {
           </div>
 
           <div>
-            <div className="mb-3 flex items-center justify-between">
-              <h3 className="text-sm font-semibold">Recent trades</h3>
-              <Link
-                href="/journal"
-                className="text-sm text-muted hover:text-foreground"
-              >
-                View all
+            <div className="mb-3 flex items-center justify-between px-1">
+              <h3 className="flex items-center gap-2 text-sm font-semibold">
+                <History className="h-4 w-4 text-muted" /> Recent trades
+              </h3>
+              <Link href="/journal" className="btn btn-ghost btn-sm">
+                View all <ArrowRight className="h-3.5 w-3.5" />
               </Link>
             </div>
             {recentTrades.length === 0 ? (
@@ -175,6 +173,11 @@ export default function DashboardPage() {
       )}
     </div>
   );
+}
+
+function greeting() {
+  const h = new Date().getHours();
+  return h < 12 ? "Good morning" : h < 18 ? "Good afternoon" : "Good evening";
 }
 
 function LoadingState() {

@@ -167,7 +167,7 @@ export default function BacktestGalleryView({
             type="button"
             onClick={() => fileInputRef.current?.click()}
             disabled={uploading || !ready}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-xs font-medium text-accent-foreground transition-transform hover:opacity-95 active:scale-[0.98] disabled:opacity-60"
+            className="btn btn-primary btn-sm"
           >
             {uploading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />}
             Upload screenshots

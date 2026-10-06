@@ -353,3 +353,122 @@ export function monthlyReturnMatrix(trades: Trade[], startingBalance: number): M
   }
   return Array.from(rows.values()).sort((a, b) => a.year.localeCompare(b.year));
 }
+
+// ---------------------------------------------------------------------------
+// Dashboard-grade views (Analytics page) — still pure and additive.
+// ---------------------------------------------------------------------------
+
+/** One point per realized day: that day's net P&L and the running total. */
+export function dailyPnlSeries(trades: Trade[]): { date: string; label: string; pnl: number; cum: number; trades: number }[] {
+  let cum = 0;
+  return aggregateByDay(trades).map((d) => {
+    cum += d.pnl;
+    return {
+      date: d.date,
+      label: new Date(`${d.date}T00:00:00`).toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+      pnl: d.pnl,
+      cum,
+      trades: d.trades,
+    };
+  });
+}
+
+export function dayWinStats(trades: Trade[]): { green: number; red: number; flat: number; pct: number } {
+  const days = aggregateByDay(trades);
+  const green = days.filter((d) => d.pnl > 0).length;
+  const red = days.filter((d) => d.pnl < 0).length;
+  return { green, red, flat: days.length - green - red, pct: days.length ? (green / days.length) * 100 : 0 };
+}
+
+export interface EdgeAxis {
+  axis: string;
+  value: number; // 0-100
+  raw: string;
+}
+
+/**
+ * A 0–100 composite (Tradezella-style) from six normalized axes. Each axis is
+ * clamped so one outlier metric can't dominate: win % (60% = full marks),
+ * profit factor (2.5), avg win/loss (2.5), recovery factor (net / max DD, 3),
+ * max drawdown (0% = 100, 20%+ = 0) and the existing consistency score.
+ */
+export function edgeScore(trades: Trade[], startingBalance: number): { score: number; axes: EdgeAxis[] } {
+  const s = computeStats(trades, startingBalance);
+  const dd = computeDrawdown(trades, startingBalance);
+  const c = computeConsistencyScore(trades);
+  const clamp = (v: number) => Math.max(0, Math.min(100, v));
+  const pf = Number.isFinite(s.profitFactor) ? s.profitFactor : s.profitFactor > 0 ? 3 : 0;
+  const ratio = s.avgLoss ? s.avgWin / s.avgLoss : s.avgWin > 0 ? 3 : 0;
+  const recovery = dd.maxDrawdown ? s.netPnl / dd.maxDrawdown : s.netPnl > 0 ? 3 : 0;
+  const axes: EdgeAxis[] = [
+    { axis: "Win %", value: clamp((s.winRate / 60) * 100), raw: `${s.winRate.toFixed(1)}%` },
+    { axis: "Profit factor", value: clamp((pf / 2.5) * 100), raw: Number.isFinite(s.profitFactor) ? s.profitFactor.toFixed(2) : "∞" },
+    { axis: "Win / loss", value: clamp((ratio / 2.5) * 100), raw: ratio.toFixed(2) },
+    { axis: "Recovery", value: clamp((recovery / 3) * 100), raw: recovery.toFixed(2) },
+    { axis: "Drawdown", value: clamp(100 - (dd.maxDrawdownPct / 20) * 100), raw: `${dd.maxDrawdownPct.toFixed(1)}%` },
+    { axis: "Consistency", value: clamp(c.score), raw: `${Math.round(c.score)}` },
+  ];
+  const score = s.closedTrades ? axes.reduce((sum, a) => sum + a.value, 0) / axes.length : 0;
+  return { score, axes };
+}
+
+/** Histogram of per-trade P&L in equal-width currency buckets. */
+export function pnlDistribution(trades: Trade[], bins = 12): { label: string; from: number; to: number; count: number }[] {
+  const pnls = trades.filter(isClosed).map((t) => t.pnl);
+  if (!pnls.length) return [];
+  const min = Math.min(...pnls);
+  const max = Math.max(...pnls);
+  if (min === max) return [{ label: `${Math.round(min)}`, from: min, to: max, count: pnls.length }];
+  const width = (max - min) / bins;
+  const out = Array.from({ length: bins }, (_, i) => ({ from: min + i * width, to: min + (i + 1) * width, count: 0, label: "" }));
+  for (const p of pnls) out[Math.min(bins - 1, Math.floor((p - min) / width))].count += 1;
+  return out.map((b) => ({ ...b, label: `${Math.round((b.from + b.to) / 2)}` }));
+}
+
+const HOLD_BUCKETS: { label: string; maxDays: number }[] = [
+  { label: "Same day", maxDays: 0 },
+  { label: "1d", maxDays: 1 },
+  { label: "2–3d", maxDays: 3 },
+  { label: "4–7d", maxDays: 7 },
+  { label: "1–2w", maxDays: 14 },
+  { label: "2w+", maxDays: Infinity },
+];
+
+/** P&L and win rate grouped by how long trades were held (calendar days). */
+export function holdingTimeBreakdown(trades: Trade[]): { label: string; trades: number; pnl: number; winRate: number }[] {
+  const buckets = HOLD_BUCKETS.map((b) => ({ ...b, trades: 0, pnl: 0, wins: 0 }));
+  for (const t of trades) {
+    if (!isClosed(t)) continue;
+    const days = Math.round(
+      (new Date(dateKey(new Date(t.closeDate as string))).getTime() - new Date(dateKey(new Date(t.openDate))).getTime()) / 86400000,
+    );
+    const b = buckets.find((x) => Math.max(0, days) <= x.maxDays) ?? buckets[buckets.length - 1];
+    b.trades += 1;
+    b.pnl += t.pnl;
+    if (t.pnl > 0) b.wins += 1;
+  }
+  return buckets.map((b) => ({ label: b.label, trades: b.trades, pnl: b.pnl, winRate: b.trades ? (b.wins / b.trades) * 100 : 0 }));
+}
+
+/** Average P&L per calendar month across every year traded (seasonality). */
+export function monthSeasonality(trades: Trade[]): { month: string; avgPnl: number; years: number; trades: number }[] {
+  const byMonth = aggregateByMonth(trades);
+  return Array.from({ length: 12 }, (_, i) => {
+    const rows = byMonth.filter((m) => Number(m.month.slice(5, 7)) === i + 1);
+    const total = rows.reduce((s, r) => s + r.pnl, 0);
+    return {
+      month: new Date(2000, i, 1).toLocaleDateString("en-US", { month: "short" }),
+      avgPnl: rows.length ? total / rows.length : 0,
+      years: rows.length,
+      trades: rows.reduce((s, r) => s + r.trades, 0),
+    };
+  });
+}
+
+/** Long vs short side-by-side using the canonical stats. */
+export function directionSplit(trades: Trade[], startingBalance: number) {
+  return {
+    long: computeStats(trades.filter((t) => t.direction === "LONG"), startingBalance),
+    short: computeStats(trades.filter((t) => t.direction === "SHORT"), startingBalance),
+  };
+}

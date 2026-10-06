@@ -44,7 +44,7 @@ export default function DrawdownChart({ series }: { series: DrawdownPoint[] }) {
           <defs>
             <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
               <stop offset="0%" stopColor="var(--loss)" stopOpacity={0} />
-              <stop offset="100%" stopColor="var(--loss)" stopOpacity={0.35} />
+              <stop offset="100%" stopColor="var(--loss)" stopOpacity={0.22} />
             </linearGradient>
           </defs>
           <XAxis dataKey="date" hide />
@@ -55,6 +55,7 @@ export default function DrawdownChart({ series }: { series: DrawdownPoint[] }) {
             dataKey="drawdown"
             stroke="var(--loss)"
             strokeWidth={1.5}
+            strokeLinejoin="round"
             fill={`url(#${gradientId})`}
             isAnimationActive
             animationDuration={500}

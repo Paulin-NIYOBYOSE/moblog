@@ -182,14 +182,14 @@ export default function AccountModal({
             <button
               type="button"
               onClick={onClose}
-              className="ml-auto rounded-lg border border-border px-4 py-2 text-sm font-medium hover:bg-surface-2"
+              className="btn btn-secondary ml-auto"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={saving}
-              className="inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-accent-foreground disabled:opacity-60"
+              className="btn btn-primary"
             >
               {saving && <Loader2 className="h-4 w-4 animate-spin" />}{" "}
               {isEdit ? "Save" : "Create"}

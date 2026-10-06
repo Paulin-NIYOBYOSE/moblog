@@ -3,8 +3,17 @@
 import { useEffect, useState } from "react";
 import { ChevronLeft, ChevronRight, Download, Loader2, Trash2, X } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import type { MediaImage } from "@/lib/media/types";
 import { useConfirm } from "@/components/ConfirmContext";
+
+/** The fields the lightbox needs — gallery images and attachments both fit. */
+export interface LightboxImage {
+  id: string;
+  name: string;
+  size: number;
+  width: number | null;
+  height: number | null;
+  caption: string | null;
+}
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -21,8 +30,9 @@ export default function ImageLightbox({
   onRename,
   onUpdateCaption,
   captionPlaceholder = "Add a note...",
+  srcFor = (id: string) => `/api/media/images/${id}`,
 }: {
-  images: MediaImage[];
+  images: LightboxImage[];
   index: number;
   onClose: () => void;
   onNavigate: (index: number) => void;
@@ -30,6 +40,8 @@ export default function ImageLightbox({
   onRename: (id: string, name: string) => Promise<void>;
   onUpdateCaption?: (id: string, caption: string) => Promise<void>;
   captionPlaceholder?: string;
+  /** Where to load an image from — defaults to the media gallery endpoint. */
+  srcFor?: (id: string) => string;
 }) {
   const image = images[index];
   const [editingName, setEditingName] = useState(false);
@@ -147,7 +159,7 @@ export default function ImageLightbox({
           </div>
           <div className="flex shrink-0 items-center gap-1">
             <a
-              href={`/api/media/images/${image.id}?download=1`}
+              href={`${srcFor(image.id)}?download=1`}
               className="flex h-9 w-9 items-center justify-center rounded-lg text-white/80 transition-colors hover:bg-white/10 hover:text-white"
               title="Download"
             >
@@ -188,7 +200,7 @@ export default function ImageLightbox({
             initial={{ opacity: 0, scale: 0.98 }}
             animate={{ opacity: 1, scale: 1 }}
             transition={{ duration: 0.15 }}
-            src={`/api/media/images/${image.id}`}
+            src={srcFor(image.id)}
             alt={image.name}
             className="max-h-full max-w-full rounded-lg object-contain shadow-2xl"
           />

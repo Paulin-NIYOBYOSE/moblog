@@ -73,7 +73,7 @@ export default function HistoryCalendar({ items, todayKey }: { items: BacktestIt
             <button
               type="button"
               onClick={goToday}
-              className="rounded-lg border border-border px-2.5 py-1 text-xs font-medium transition-colors hover:bg-surface-2"
+              className="btn btn-secondary btn-sm"
             >
               This Month
             </button>

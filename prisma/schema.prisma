@@ -53,7 +53,8 @@ model Account {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
-  trades Trade[]
+  trades         Trade[]
+  journalEntries JournalEntry[]
 
   @@index([isArchived])
 }
@@ -102,10 +103,10 @@ model Trade {
 // object-storage service configured; client-side compression keeps files
 // small before upload.
 model MediaFolder {
-  id       String       @id @default(cuid())
+  id       String        @id @default(cuid())
   name     String
   parentId String?
-  parent   MediaFolder? @relation("FolderChildren", fields: [parentId], references: [id], onDelete: Cascade)
+  parent   MediaFolder?  @relation("FolderChildren", fields: [parentId], references: [id], onDelete: Cascade)
   children MediaFolder[] @relation("FolderChildren")
   images   MediaImage[]
 
@@ -171,4 +172,88 @@ model Content {
   @@index([status])
   @@index([publishDate])
   @@index([type])
+}
+
+// ---------------------------------------------------------------------------
+// Journal — one reflective entry per trading day (optionally per account),
+// with emotions, mistakes, plan adherence and screenshots. P&L is never
+// stored here: analytics join entries to that day's closed trades so the
+// numbers can't drift from the trade log.
+// ---------------------------------------------------------------------------
+model JournalEntry {
+  id        String   @id @default(cuid())
+  day       String // yyyy-mm-dd (local trading day) — string avoids TZ drift
+  account   Account? @relation(fields: [accountId], references: [id], onDelete: SetNull)
+  accountId String?
+
+  title        String?
+  mood         Int? // 1 (rough) .. 5 (great), before the session
+  discipline   Int? // 1 .. 5 self-rated execution
+  followedPlan Boolean?
+
+  emotionsBefore String[]
+  emotionsAfter  String[]
+  mistakes       String[]
+  tags           String[]
+  tradeIds       String[] // optional explicit links; empty = all trades that day
+  checklist      String[] // DRIPDOLLAR A+ checklist items that held for the day's setup
+
+  premarket String? // plan / bias before the session
+  notes     String? // reflection
+  lessons   String?
+
+  attachments Attachment[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([day])
+  @@index([accountId, day])
+}
+
+// Images attached to journal entries and Backtesting v2 pair-year sessions.
+// Kept separate from MediaImage so they never appear in the folder gallery.
+model Attachment {
+  id       String  @id @default(cuid())
+  name     String
+  mimeType String
+  size     Int
+  data     Bytes
+  width    Int?
+  height   Int?
+  caption  String?
+
+  journalEntry   JournalEntry?   @relation(fields: [journalEntryId], references: [id], onDelete: Cascade)
+  journalEntryId String?
+  btItem         BacktestV2Item? @relation(fields: [btItemId], references: [id], onDelete: Cascade)
+  btItemId       String?
+
+  createdAt DateTime @default(now())
+
+  @@index([journalEntryId])
+  @@index([btItemId])
+}
+
+// ---------------------------------------------------------------------------
+// Backtesting v2 — progress tracker for the DRIPDOLLAR backtest: 56 pair-years
+// (28 instruments x 2024/2025), one per day from Nov 1 to Dec 31 2026, each
+// with optional result notes/screenshots. Independent of the original
+// BacktestItem plan, which it never reads or writes.
+// ---------------------------------------------------------------------------
+model BacktestV2Item {
+  id          String    @id @default(cuid())
+  instrument  String
+  year        Int
+  sequence    Int       @unique
+  completed   Boolean   @default(false)
+  completedAt DateTime?
+  notes       String?
+
+  attachments Attachment[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([instrument, year])
+  @@index([completed])
 }

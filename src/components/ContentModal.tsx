@@ -326,14 +326,14 @@ export default function ContentModal({
                 <button
                   type="button"
                   onClick={onClose}
-                  className="ml-auto rounded-lg border border-border px-4 py-2.5 text-sm font-medium transition-colors hover:bg-surface-2"
+                  className="btn btn-secondary ml-auto"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={saving}
-                  className="inline-flex items-center gap-2 rounded-lg bg-accent px-5 py-2.5 text-sm font-medium text-accent-foreground transition-transform hover:opacity-95 active:scale-[0.98] disabled:opacity-60"
+                  className="btn btn-primary px-5"
                 >
                   {saving && <Loader2 className="h-4 w-4 animate-spin" />}
                   {isEdit ? "Save changes" : "Create"}

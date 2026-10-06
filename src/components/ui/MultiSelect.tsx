@@ -73,7 +73,7 @@ export default function MultiSelect({
         />
       </button>
       {open && (
-        <div className="absolute z-50 mt-1 w-56 overflow-hidden rounded-xl border border-border bg-surface shadow-xl">
+        <div className="absolute z-50 mt-1 w-56 overflow-hidden animate-pop-in rounded-xl border border-border bg-card shadow-xl">
           {options.length > 1 && (
             <div className="flex items-center justify-between border-b border-border px-3 py-1.5 text-xs">
               <button
@@ -92,7 +92,7 @@ export default function MultiSelect({
               </button>
             </div>
           )}
-          <ul className="max-h-60 overflow-y-auto py-1">
+          <ul className="max-h-60 overflow-y-auto p-1">
             {options.length === 0 && (
               <li className="px-3 py-2 text-sm text-muted">No options</li>
             )}
@@ -103,7 +103,7 @@ export default function MultiSelect({
                   <button
                     type="button"
                     onClick={() => toggle(option.value)}
-                    className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors hover:bg-surface-2"
+                    className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm transition-colors hover:bg-surface-2"
                   >
                     <span
                       className={cn(

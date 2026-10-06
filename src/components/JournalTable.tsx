@@ -112,7 +112,7 @@ export default function JournalTable({
         <button
           type="button"
           onClick={onAdd}
-          className="inline-flex items-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 text-xs font-medium transition-colors hover:bg-surface-2"
+          className="btn btn-secondary btn-sm"
         >
           <Plus className="h-3.5 w-3.5" /> Add
         </button>
@@ -125,7 +125,7 @@ export default function JournalTable({
             <button
               type="button"
               onClick={onAdd}
-              className="inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-accent-foreground"
+              className="btn btn-primary"
             >
               <Plus className="h-4 w-4" /> Log your first trade
             </button>

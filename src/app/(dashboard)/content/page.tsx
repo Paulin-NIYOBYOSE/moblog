@@ -201,13 +201,18 @@ export default function ContentDashboardPage() {
   return (
     <div>
       <PageHeader
+        eyebrow={
+          <>
+            <Tag className="h-3 w-3" /> Studio
+          </>
+        }
         title="Content"
         subtitle="Plan, track, and publish your content"
         actions={
           <button
             type="button"
             onClick={openAdd}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-3 py-2 text-sm font-medium text-accent-foreground shadow-sm transition-transform active:scale-[0.98]"
+            className="btn btn-primary"
           >
             <Plus className="h-4 w-4" /> New content
           </button>
@@ -260,7 +265,7 @@ export default function ContentDashboardPage() {
               resetPage();
             }}
             placeholder="Search title, topic..."
-            className="input pl-9"
+            className="input h-9 pl-9"
           />
           {search && (
             <button
@@ -289,12 +294,7 @@ export default function ContentDashboardPage() {
         <button
           type="button"
           onClick={() => setShowFilters((s) => !s)}
-          className={cn(
-            "ml-auto inline-flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm font-medium transition-colors",
-            showFilters
-              ? "bg-surface-2 text-foreground"
-              : "text-muted hover:bg-surface-2 hover:text-foreground",
-          )}
+          className={cn("btn btn-secondary ml-auto", showFilters && "border-accent/50 text-accent")}
         >
           <SlidersHorizontal className="h-4 w-4" /> Filters
         </button>
@@ -318,7 +318,7 @@ export default function ContentDashboardPage() {
                 <button
                   type="button"
                   onClick={openAdd}
-                  className="inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-accent-foreground"
+                  className="btn btn-primary"
                 >
                   <Plus className="h-4 w-4" /> New content
                 </button>
@@ -491,7 +491,7 @@ export default function ContentDashboardPage() {
                       type="button"
                       disabled={page === 1}
                       onClick={() => setPage((p) => p - 1)}
-                      className="rounded-lg border border-border px-3 py-1.5 font-medium transition-colors disabled:opacity-40 hover:bg-surface-2"
+                      className="btn btn-secondary btn-sm"
                     >
                       Previous
                     </button>
@@ -502,7 +502,7 @@ export default function ContentDashboardPage() {
                       type="button"
                       disabled={page === totalPages}
                       onClick={() => setPage((p) => p + 1)}
-                      className="rounded-lg border border-border px-3 py-1.5 font-medium transition-colors disabled:opacity-40 hover:bg-surface-2"
+                      className="btn btn-secondary btn-sm"
                     >
                       Next
                     </button>

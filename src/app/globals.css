@@ -3,20 +3,35 @@
 /* Class-based dark mode: toggled by adding `.dark` on <html>. */
 @custom-variant dark (&:where(.dark, .dark *));
 
+/* ---------------------------------------------------------------------------
+   Design tokens
+   A quiet, "private ledger" system: warm porcelain + ink in light mode,
+   obsidian + hairlines in dark. The data is the only loud thing on screen —
+   surfaces stay neutral, accent is used sparingly for focus and selection.
+   --------------------------------------------------------------------------- */
 :root {
-  --background: #f6f7f9;
+  --background: #f5f5f2;
   --surface: #ffffff;
-  --surface-2: #fbfbfd;
+  --surface-2: #f8f8f6;
+  --surface-3: #f0f0ec;
   --card: #ffffff;
-  --border: #e7e9ee;
-  --foreground: #0d1117;
-  --muted: #687083;
-  --accent: #6d5efc;
+  --border: #e6e5df;
+  --border-strong: #d6d5ce;
+  --foreground: #0c0d10;
+  --muted: #696d78;
+  --faint: #9a9da6;
+  --accent: #5e4ff2;
+  --accent-2: #7f72ff;
   --accent-foreground: #ffffff;
-  --profit: #15a05c;
-  --loss: #e0453f;
-  --profit-soft: rgba(21, 160, 92, 0.1);
-  --loss-soft: rgba(224, 69, 63, 0.1);
+  --accent-soft: rgba(94, 79, 242, 0.09);
+  --profit: #12935a;
+  --loss: #d9433d;
+  --profit-soft: rgba(18, 147, 90, 0.1);
+  --loss-soft: rgba(217, 67, 61, 0.1);
+
+  /* Premium cue — A+ grades, streaks, milestones. Never a data series. */
+  --gold: #a77b26;
+  --gold-soft: rgba(167, 123, 38, 0.12);
 
   /* Status tones (non-P&L) */
   --warning: #b45309;
@@ -37,32 +52,44 @@
   --chart-4: #eda100; /* yellow */
   --chart-5: #e87ba4; /* magenta */
   --chart-6: #4a3aa7; /* violet */
-  --chart-grid: #e7e9ee;
-  --chart-axis: #c7cbd4;
+  --chart-grid: #eceae4;
+  --chart-axis: #cfcdc5;
 
   /* Elevation scale */
   --shadow-xs: 0 1px 1px rgba(13, 17, 23, 0.03);
-  --shadow-sm: 0 1px 2px rgba(13, 17, 23, 0.04), 0 1px 1px rgba(13, 17, 23, 0.03);
-  --shadow-md: 0 4px 12px rgba(13, 17, 23, 0.06), 0 2px 4px rgba(13, 17, 23, 0.04);
-  --shadow-lg: 0 12px 32px rgba(13, 17, 23, 0.1), 0 4px 8px rgba(13, 17, 23, 0.04);
-  --shadow-xl: 0 20px 48px rgba(13, 17, 23, 0.14), 0 6px 12px rgba(13, 17, 23, 0.06);
-  --shadow-2xl: 0 28px 64px rgba(13, 17, 23, 0.18);
+  --shadow-sm: 0 1px 2px rgba(13, 17, 23, 0.04), 0 1px 1px rgba(13, 17, 23, 0.02);
+  --shadow-md: 0 4px 14px -2px rgba(13, 17, 23, 0.07), 0 2px 4px rgba(13, 17, 23, 0.03);
+  --shadow-lg: 0 14px 34px -8px rgba(13, 17, 23, 0.14), 0 4px 8px rgba(13, 17, 23, 0.04);
+  --shadow-xl: 0 22px 50px -12px rgba(13, 17, 23, 0.2), 0 6px 12px rgba(13, 17, 23, 0.05);
+  --shadow-2xl: 0 30px 70px -16px rgba(13, 17, 23, 0.26);
+  --shadow-card: 0 1px 2px rgba(13, 17, 23, 0.04), 0 0 0 0.5px rgba(13, 17, 23, 0.02);
+  --highlight: inset 0 1px 0 rgba(255, 255, 255, 0.9);
+
+  --page-glow: color-mix(in srgb, var(--accent) 7%, transparent);
 }
 
 .dark {
-  --background: #08090d;
-  --surface: #101218;
-  --surface-2: #14161d;
-  --card: #14161d;
-  --border: #23262f;
-  --foreground: #f2f4f8;
-  --muted: #8a90a0;
+  --background: #07080a;
+  --surface: #0c0d11;
+  --surface-2: #121419;
+  --surface-3: #181a21;
+  --card: #0e1014;
+  --border: #1e2027;
+  --border-strong: #2a2d36;
+  --foreground: #f3f4f7;
+  --muted: #8d919d;
+  --faint: #626672;
   --accent: #7c6cff;
+  --accent-2: #a197ff;
   --accent-foreground: #ffffff;
+  --accent-soft: rgba(124, 108, 255, 0.13);
   --profit: #2fd17a;
   --loss: #f25852;
   --profit-soft: rgba(47, 209, 122, 0.12);
   --loss-soft: rgba(242, 88, 82, 0.12);
+
+  --gold: #d9b56a;
+  --gold-soft: rgba(217, 181, 106, 0.13);
 
   --warning: #fbbf24;
   --warning-soft: rgba(251, 191, 36, 0.14);
@@ -75,31 +102,42 @@
   --chart-4: #c98500;
   --chart-5: #d55181;
   --chart-6: #9085e9;
-  --chart-grid: #23262f;
-  --chart-axis: #383b47;
+  --chart-grid: #1b1d24;
+  --chart-axis: #2e313b;
 
   --shadow-xs: 0 1px 1px rgba(0, 0, 0, 0.24);
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.28);
-  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.36);
-  --shadow-lg: 0 16px 40px rgba(0, 0, 0, 0.44);
-  --shadow-xl: 0 24px 56px rgba(0, 0, 0, 0.5);
-  --shadow-2xl: 0 32px 72px rgba(0, 0, 0, 0.56);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 6px 18px -4px rgba(0, 0, 0, 0.5);
+  --shadow-lg: 0 18px 42px -10px rgba(0, 0, 0, 0.6);
+  --shadow-xl: 0 26px 60px -14px rgba(0, 0, 0, 0.66);
+  --shadow-2xl: 0 34px 80px -18px rgba(0, 0, 0, 0.72);
+  --shadow-card: inset 0 1px 0 rgba(255, 255, 255, 0.035), 0 1px 2px rgba(0, 0, 0, 0.35);
+  --highlight: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+
+  --page-glow: color-mix(in srgb, var(--accent) 11%, transparent);
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-surface: var(--surface);
   --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
   --color-card: var(--card);
   --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
   --color-foreground: var(--foreground);
   --color-muted: var(--muted);
+  --color-faint: var(--faint);
   --color-accent: var(--accent);
+  --color-accent-2: var(--accent-2);
   --color-accent-foreground: var(--accent-foreground);
+  --color-accent-soft: var(--accent-soft);
   --color-profit: var(--profit);
   --color-loss: var(--loss);
   --color-profit-soft: var(--profit-soft);
   --color-loss-soft: var(--loss-soft);
+  --color-gold: var(--gold);
+  --color-gold-soft: var(--gold-soft);
   --color-warning: var(--warning);
   --color-warning-soft: var(--warning-soft);
   --color-info: var(--info);
@@ -114,6 +152,7 @@
   --color-chart-axis: var(--chart-axis);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+  --font-display: var(--font-display-serif);
   --radius-xl: 0.875rem;
   --radius-2xl: 1.125rem;
   --shadow-xs: var(--shadow-xs);
@@ -122,10 +161,16 @@
   --shadow-lg: var(--shadow-lg);
   --shadow-xl: var(--shadow-xl);
   --shadow-2xl: var(--shadow-2xl);
+  --shadow-card: var(--shadow-card);
 }
 
-* {
-  border-color: var(--border);
+/* In a layer so Tailwind border-color utilities (border-accent, …) still win. */
+@layer base {
+  *,
+  ::before,
+  ::after {
+    border-color: var(--border);
+  }
 }
 
 html {
@@ -147,11 +192,22 @@ body {
     Helvetica,
     Arial,
     sans-serif;
+  font-feature-settings: "ss01", "cv11";
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
   transition: background-color 0.25s ease, color 0.25s ease;
 }
 
+::selection {
+  background: color-mix(in srgb, var(--accent) 24%, transparent);
+}
+
+/* Ambient glow behind the main column — a light wash, never a gradient block. */
+.page-glow {
+  background:
+    radial-gradient(900px 380px at 78% -120px, var(--page-glow), transparent 70%),
+    radial-gradient(700px 300px at 0% -160px, color-mix(in srgb, var(--accent) 4%, transparent), transparent 70%);
+}
 
 /* Thin, unobtrusive scrollbars */
 ::-webkit-scrollbar {
@@ -167,6 +223,12 @@ body {
 ::-webkit-scrollbar-thumb:hover {
   background: var(--muted);
   background-clip: content-box;
+}
+.no-scrollbar {
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
 }
 
 @keyframes fade-in {
@@ -185,6 +247,16 @@ body {
   to {
     opacity: 1;
     transform: translateY(0) scale(1);
+  }
+}
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
   }
 }
 @keyframes grow-bar {
@@ -211,11 +283,19 @@ body {
     background-position: 200% 0;
   }
 }
+@keyframes pulse-ring {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 45%, transparent);
+  }
+  100% {
+    box-shadow: 0 0 0 8px transparent;
+  }
+}
 .animate-shimmer {
   background-image: linear-gradient(
     90deg,
     var(--surface-2) 25%,
-    var(--border) 50%,
+    var(--surface-3) 50%,
     var(--surface-2) 75%
   );
   background-size: 200% 100%;
@@ -226,6 +306,12 @@ body {
 }
 .animate-pop-in {
   animation: pop-in 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.animate-rise-in {
+  animation: rise-in 0.35s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.animate-pulse-ring {
+  animation: pulse-ring 1.6s ease-out infinite;
 }
 .animate-grow-bar {
   animation: grow-bar 0.6s cubic-bezier(0.16, 1, 0.3, 1) both;
@@ -241,24 +327,47 @@ body {
   animation: draw-line 0.8s ease-out forwards;
 }
 
-/* Shared form input styling used in the trade form */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   Shared primitives
+   --------------------------------------------------------------------------- */
+
+@layer components {
+/* Shared form input styling used across forms */
 .input {
   width: 100%;
-  border-radius: 0.6rem;
+  border-radius: 0.65rem;
   border: 1px solid var(--border);
-  background: var(--surface-2);
-  padding: 0.55rem 0.7rem;
+  background: var(--surface);
+  padding: 0.55rem 0.75rem;
   font-size: 0.9rem;
   color: var(--foreground);
   outline: none;
-  transition: border-color 0.15s, box-shadow 0.15s;
+  box-shadow: var(--shadow-xs);
+  transition: border-color 0.15s, box-shadow 0.15s, background-color 0.15s;
 }
-.input:focus {
+.dark .input {
+  background: var(--surface-2);
+}
+.input:hover {
+  border-color: var(--border-strong);
+}
+.input:focus,
+.input:focus-visible {
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 20%, transparent);
 }
 .input::placeholder {
-  color: var(--muted);
+  color: var(--faint);
 }
 
 select.input {
@@ -274,4 +383,174 @@ select.input {
 select.input option {
   background: var(--surface);
   color: var(--foreground);
+}
+
+/* Buttons */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  border-radius: 0.65rem;
+  padding: 0.5rem 0.85rem;
+  font-size: 0.85rem;
+  font-weight: 500;
+  line-height: 1.25rem;
+  white-space: nowrap;
+  transition: background-color 0.15s, border-color 0.15s, color 0.15s, box-shadow 0.15s, transform 0.1s, opacity 0.15s;
+  user-select: none;
+}
+.btn:active:not(:disabled) {
+  transform: scale(0.98);
+}
+.btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 28%, transparent);
+}
+.btn-primary {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 88%, white) 0%, var(--accent) 100%);
+  color: var(--accent-foreground);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.22),
+    0 0 0 1px color-mix(in srgb, var(--accent) 80%, black),
+    0 6px 16px -6px color-mix(in srgb, var(--accent) 65%, transparent);
+}
+.btn-primary:hover:not(:disabled) {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 80%, white) 0%, color-mix(in srgb, var(--accent) 94%, white) 100%);
+}
+.btn-secondary {
+  background: var(--surface);
+  color: var(--foreground);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-xs);
+}
+.dark .btn-secondary {
+  background: var(--surface-2);
+}
+.btn-secondary:hover:not(:disabled) {
+  border-color: var(--border-strong);
+  background: var(--surface-2);
+}
+.dark .btn-secondary:hover:not(:disabled) {
+  background: var(--surface-3);
+}
+.btn-ghost {
+  color: var(--muted);
+}
+.btn-ghost:hover:not(:disabled) {
+  color: var(--foreground);
+  background: var(--surface-2);
+}
+.btn-danger {
+  color: var(--loss);
+  border: 1px solid var(--border);
+  background: var(--surface);
+}
+.btn-danger:hover:not(:disabled) {
+  background: var(--loss-soft);
+  border-color: color-mix(in srgb, var(--loss) 30%, transparent);
+}
+.btn-sm {
+  padding: 0.35rem 0.65rem;
+  font-size: 0.78rem;
+  border-radius: 0.55rem;
+}
+.btn-icon {
+  padding: 0;
+  width: 2.25rem;
+  height: 2.25rem;
+}
+.btn-icon.btn-sm {
+  width: 1.85rem;
+  height: 1.85rem;
+}
+
+/* Selectable chip */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  padding: 0.3rem 0.7rem;
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: var(--muted);
+  transition: background-color 0.15s, border-color 0.15s, color 0.15s;
+}
+.dark .chip {
+  background: var(--surface-2);
+}
+.chip:hover {
+  color: var(--foreground);
+  border-color: var(--border-strong);
+}
+.chip[data-active="true"] {
+  color: var(--foreground);
+  border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+  background: var(--accent-soft);
+}
+
+/* Small uppercase label above titles and stat values */
+.eyebrow {
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* Toggle switch */
+.switch {
+  position: relative;
+  display: inline-flex;
+  height: 1.25rem;
+  width: 2.15rem;
+  flex-shrink: 0;
+  border-radius: 999px;
+  background: var(--surface-3);
+  border: 1px solid var(--border);
+  transition: background-color 0.18s, border-color 0.18s;
+}
+.switch::after {
+  content: "";
+  position: absolute;
+  top: 1px;
+  left: 1px;
+  height: 1rem;
+  width: 1rem;
+  border-radius: 999px;
+  background: white;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.switch[data-on="true"] {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.switch[data-on="true"]::after {
+  transform: translateX(0.9rem);
+}
+
+/* Prose for long-form journal / playbook text */
+.prose-note {
+  font-size: 0.9rem;
+  line-height: 1.65;
+  color: var(--foreground);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+}
+
+/* Recharts focus outline is noisy on click — keyboard focus stays visible via
+   the tooltip, which tracks the active index. */
+.recharts-wrapper svg:focus,
+.recharts-surface:focus,
+.recharts-layer:focus {
+  outline: none;
 }

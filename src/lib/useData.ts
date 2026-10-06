@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { useToast } from "@/components/ToastContext";
 import type { Account, AccountInput, Trade, TradeInput, Content, ContentInput } from "./types";
 
@@ -12,6 +12,11 @@ async function parseError(res: Response): Promise<string> {
     return `Request failed (${res.status})`;
   }
 }
+
+// Every component calls useData() for its own copy of the data, so a mutation
+// in one place (e.g. the global trade modal) must tell the others to refetch —
+// otherwise the page behind the modal keeps showing stale trades/balances.
+const DATA_CHANGED_EVENT = "moblog:data-changed";
 
 export function useData() {
   const [accounts, setAccounts] = useState<Account[]>([]);
@@ -28,6 +33,10 @@ export function useData() {
   useEffect(() => {
     toastRef.current = toast;
   }, [toast]);
+  const instanceId = useId();
+  const notify = useCallback(() => {
+    window.dispatchEvent(new CustomEvent(DATA_CHANGED_EVENT, { detail: instanceId }));
+  }, [instanceId]);
 
   const refreshAccounts = useCallback(async () => {
     const res = await fetch("/api/accounts", { cache: "no-store" });
@@ -67,6 +76,14 @@ export function useData() {
     refresh();
   }, [refresh]);
 
+  useEffect(() => {
+    function onChanged(e: Event) {
+      if ((e as CustomEvent).detail !== instanceId) refresh();
+    }
+    window.addEventListener(DATA_CHANGED_EVENT, onChanged);
+    return () => window.removeEventListener(DATA_CHANGED_EVENT, onChanged);
+  }, [refresh, instanceId]);
+
   const createAccount = useCallback(async (input: AccountInput) => {
     const toastId = toastRef.current.loading("Creating account...");
     try {
@@ -78,13 +95,14 @@ export function useData() {
       if (!res.ok) throw new Error(await parseError(res));
       await refreshAccounts();
       toastRef.current.success("Account created");
+      notify();
     } catch (e) {
       toastRef.current.error(e instanceof Error ? e.message : "Failed to create account");
       throw e;
     } finally {
       toastRef.current.remove(toastId);
     }
-  }, [refreshAccounts]);
+  }, [refreshAccounts, notify]);
 
   const updateAccount = useCallback(
     async (id: string, input: AccountInput) => {
@@ -98,6 +116,7 @@ export function useData() {
         if (!res.ok) throw new Error(await parseError(res));
         await refreshAccounts();
         toastRef.current.success("Account updated");
+        notify();
       } catch (e) {
         toastRef.current.error(e instanceof Error ? e.message : "Failed to update account");
         throw e;
@@ -105,7 +124,7 @@ export function useData() {
         toastRef.current.remove(toastId);
       }
     },
-    [refreshAccounts],
+    [refreshAccounts, notify],
   );
 
   const deleteAccount = useCallback(
@@ -116,6 +135,7 @@ export function useData() {
         if (!res.ok) throw new Error(await parseError(res));
         await refreshAccounts();
         toastRef.current.success("Account deleted");
+        notify();
       } catch (e) {
         toastRef.current.error(e instanceof Error ? e.message : "Failed to delete account");
         throw e;
@@ -123,7 +143,7 @@ export function useData() {
         toastRef.current.remove(toastId);
       }
     },
-    [refreshAccounts],
+    [refreshAccounts, notify],
   );
 
   const createTrade = useCallback(
@@ -138,6 +158,7 @@ export function useData() {
         if (!res.ok) throw new Error(await parseError(res));
         await refreshTrades(input.accountId);
         toastRef.current.success("Trade saved");
+        notify();
       } catch (e) {
         toastRef.current.error(e instanceof Error ? e.message : "Failed to save trade");
         throw e;
@@ -145,7 +166,7 @@ export function useData() {
         toastRef.current.remove(toastId);
       }
     },
-    [refreshTrades],
+    [refreshTrades, notify],
   );
 
   const updateTrade = useCallback(
@@ -160,6 +181,7 @@ export function useData() {
         if (!res.ok) throw new Error(await parseError(res));
         await refreshTrades(input.accountId);
         toastRef.current.success("Trade updated");
+        notify();
       } catch (e) {
         toastRef.current.error(e instanceof Error ? e.message : "Failed to update trade");
         throw e;
@@ -167,7 +189,7 @@ export function useData() {
         toastRef.current.remove(toastId);
       }
     },
-    [refreshTrades],
+    [refreshTrades, notify],
   );
 
   const deleteTrade = useCallback(
@@ -178,6 +200,7 @@ export function useData() {
         if (!res.ok) throw new Error(await parseError(res));
         await refreshTrades(accountId);
         toastRef.current.success("Trade deleted");
+        notify();
       } catch (e) {
         toastRef.current.error(e instanceof Error ? e.message : "Failed to delete trade");
         throw e;
@@ -185,7 +208,7 @@ export function useData() {
         toastRef.current.remove(toastId);
       }
     },
-    [refreshTrades],
+    [refreshTrades, notify],
   );
 
   const createContent = useCallback(
@@ -200,6 +223,7 @@ export function useData() {
         if (!res.ok) throw new Error(await parseError(res));
         await refreshContent();
         toastRef.current.success("Content created");
+        notify();
       } catch (e) {
         toastRef.current.error(e instanceof Error ? e.message : "Failed to create content");
         throw e;
@@ -207,7 +231,7 @@ export function useData() {
         toastRef.current.remove(toastId);
       }
     },
-    [refreshContent],
+    [refreshContent, notify],
   );
 
   const updateContent = useCallback(
@@ -222,6 +246,7 @@ export function useData() {
         if (!res.ok) throw new Error(await parseError(res));
         await refreshContent();
         toastRef.current.success("Content updated");
+        notify();
       } catch (e) {
         toastRef.current.error(e instanceof Error ? e.message : "Failed to update content");
         throw e;
@@ -229,7 +254,7 @@ export function useData() {
         toastRef.current.remove(toastId);
       }
     },
-    [refreshContent],
+    [refreshContent, notify],
   );
 
   const deleteContent = useCallback(
@@ -240,6 +265,7 @@ export function useData() {
         if (!res.ok) throw new Error(await parseError(res));
         await refreshContent();
         toastRef.current.success("Content deleted");
+        notify();
       } catch (e) {
         toastRef.current.error(e instanceof Error ? e.message : "Failed to delete content");
         throw e;
@@ -247,7 +273,7 @@ export function useData() {
         toastRef.current.remove(toastId);
       }
     },
-    [refreshContent],
+    [refreshContent, notify],
   );
 
   return {

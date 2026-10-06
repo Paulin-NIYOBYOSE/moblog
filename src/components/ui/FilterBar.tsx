@@ -14,8 +14,8 @@ export default function FilterBar({
   expandedContent?: ReactNode;
 }) {
   return (
-    <Card padding="sm" className="mb-4">
-      <div className="flex flex-wrap items-center gap-3">{children}</div>
+    <Card padding="sm" className="mb-5">
+      <div className="flex flex-wrap items-center gap-2.5">{children}</div>
       <AnimatePresence initial={false}>
         {expanded && expandedContent && (
           <motion.div
