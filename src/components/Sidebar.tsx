@@ -18,6 +18,7 @@ import {
   NotebookPen,
   Pencil,
   Plus,
+  Rewind,
   Trash2,
   Wallet,
 } from "lucide-react";
@@ -51,8 +52,9 @@ const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
   {
     label: "Research",
     items: [
+      { label: "Replay", href: "/replay", icon: Rewind, badge: "New" },
       { label: "Backtesting", href: "/backtesting", icon: CalendarCheck },
-      { label: "Backtesting v2", href: "/backtesting-v2", icon: FlaskConical, badge: "New" },
+      { label: "Backtesting v2", href: "/backtesting-v2", icon: FlaskConical },
       { label: "Gallery", href: "/backtesting/gallery", icon: Images },
     ],
   },

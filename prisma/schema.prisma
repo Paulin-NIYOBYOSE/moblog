@@ -257,3 +257,106 @@ model BacktestV2Item {
   @@unique([instrument, year])
   @@index([completed])
 }
+
+// ---------------------------------------------------------------------------
+// Replay — historical market replay & backtesting
+// ---------------------------------------------------------------------------
+
+// A candle source for one instrument: either automatically downloaded from a
+// provider (one shared dataset per symbol+provider) or a user-imported file.
+model ReplayDataset {
+  id         String   @id
+  symbol     String
+  timeframe  String // base timeframe of the stored candles (M1 for providers)
+  source     String // "fxcm" | import preset, e.g. "histdata-ascii"
+  kind       String   @default("import") // "provider" | "import"
+  priceBasis String
+  // DatasetMeta minus derived coverage (quality report, files, timezone…)
+  meta       Json
+  version    Int      @default(1)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  days   ReplayCandleDay[]
+  chunks ReplayProviderChunk[]
+
+  @@index([symbol, source])
+}
+
+// Which provider files (e.g. FXCM weekly CSVs) have been processed, so a
+// week is downloaded at most once and missing weeks aren't re-requested
+// forever. Written in the same transaction as the candles they produced.
+model ReplayProviderChunk {
+  dataset   ReplayDataset @relation(fields: [datasetId], references: [id], onDelete: Cascade)
+  datasetId String
+  chunk     String // e.g. "2024-W10"
+  status    String // "ok" | "empty" | "missing"
+  n         Int
+  bytes     Int      @default(0)
+  // Rejected rows etc. from validating this file.
+  quality   Json?
+  fetchedAt DateTime @default(now())
+
+  @@id([datasetId, chunk])
+}
+
+// One UTC calendar day of candles, packed (int32 price points + float32
+// volume + optional spread) and deflated. Days with no trading are stored as
+// status "empty" so they are never downloaded twice.
+model ReplayCandleDay {
+  dataset   ReplayDataset @relation(fields: [datasetId], references: [id], onDelete: Cascade)
+  datasetId String
+  day       String // YYYY-MM-DD (UTC)
+  status    String // "ok" | "empty"
+  n         Int
+  firstT    Int?
+  lastT     Int?
+  bytes     Int
+  data      Bytes?
+  rev       Int      @default(1)
+  fetchedAt DateTime @default(now())
+
+  @@id([datasetId, day])
+}
+
+model ReplaySession {
+  id        String   @id
+  name      String
+  symbol    String
+  timeframe String
+  datasetId String
+  status    String // "preparing" | "active" | "completed"
+  favorite  Boolean  @default(false)
+  archived  Boolean  @default(false)
+  strategy  String   @default("")
+  tags      String[]
+  // Everything else of the session (settings, commands, ledger, drawings…)
+  // as JSON text — exact, unlike JSONB, which can round float digits.
+  data      String
+  // Optimistic concurrency: bumped on every save, checked on write.
+  revision  Int      @default(1)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  journal ReplayJournalEntry[]
+
+  @@index([updatedAt])
+}
+
+// Journal entry for one trade (or open position) of a session.
+model ReplayJournalEntry {
+  session   ReplaySession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  sessionId String
+  tradeId   String
+  entry     Json
+  updatedAt DateTime      @updatedAt
+
+  @@id([sessionId, tradeId])
+}
+
+// Small key/value settings: strategy templates, preferences.
+model ReplayMeta {
+  key       String   @id
+  value     Json
+  updatedAt DateTime @updatedAt
+}

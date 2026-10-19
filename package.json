@@ -11,7 +11,14 @@
     "db:migrate": "prisma migrate dev",
     "db:deploy": "prisma migrate deploy",
     "db:studio": "prisma studio",
-    "db:seed": "tsx prisma/seed.ts"
+    "db:seed": "tsx prisma/seed.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "build:worker": "node scripts/build-replay-worker.mjs",
+    "predev": "npm run build:worker",
+    "prebuild": "npm run build:worker",
+    "test:e2e": "playwright test"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
@@ -19,6 +26,7 @@
   "dependencies": {
     "@prisma/client": "^6.19.3",
     "jose": "^6.2.3",
+    "lightweight-charts": "5.2.1",
     "lucide-react": "^1.21.0",
     "motion": "^13.0.0",
     "next": "16.2.9",
@@ -27,15 +35,18 @@
     "recharts": "^3.10.1"
   },
   "devDependencies": {
+    "@playwright/test": "1.63.0",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "esbuild": "0.28.1",
     "eslint": "^9",
     "eslint-config-next": "16.2.9",
     "prisma": "^6.19.3",
     "tailwindcss": "^4",
     "tsx": "^4.23.0",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vitest": "4.1.11"
   }
 }
