@@ -157,6 +157,25 @@ labels** adds text such as `TP +2.0R`; both are off by default.
   for drawings or the order preview. A price axis you zoomed by hand stays
   zoomed (the **auto** button shows its state).
 
+**Manage position:**
+
+- Open it with **Manage** on an open position (Open tab or the panel's
+  Journal tab), or by clicking the position's label on the chart.
+- Close part of the trade: 25 / 50 / 75 / 100 % or an exact lot size. It
+  shows what that realises and what remains.
+- Set the stop (with a **Break-even** shortcut) and the target for the
+  remaining lots. **Close all** closes everything.
+
+**Trade on the chart:** click a closed trade in the Closed tab, the
+panel's Journal tab, the Journal page or the analytics trade table to see it
+as you took it.
+
+- **What it shows:** the candles around the trade (never beyond what the
+  session had revealed), the position box with stop and target zones, the
+  path to the exit, entry and exit markers, your drawings, every exit and
+  the full trade details.
+- **Timeframes:** switch between M1 and H4.
+
 **Trades panel:**
 
 - **Pending / Open / Closed** tabs, plus Journal, Notes and Log.
@@ -185,7 +204,7 @@ labels** adds text such as `TP +2.0R`; both are off by default.
 **Keys:**
 
 - **Replay:** `Space` play/pause · `→` next candle · `Shift+→` one minute ·
-  `←` previous candle.
+  `←` previous candle · `+` / `−` playback speed (1× … 20×).
 - **Tools and orders:** `Enter` uses the selected position drawing as an
   order · `Esc` cancels the tool / deselects · `Delete` removes the selected
   drawing.

@@ -1,17 +1,19 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { AlertTriangle, Loader2, Search } from "lucide-react";
-import { CandlestickSeries, ColorType, LineStyle, createChart, createSeriesMarkers, type SeriesMarker, type Time, type UTCTimestamp } from "lightweight-charts";
+import { CandlestickSeries, ColorType, LineStyle, createChart, createSeriesMarkers, type Logical, type SeriesMarker, type Time, type UTCTimestamp } from "lightweight-charts";
 import Modal from "@/components/ui/Modal";
-import { aggregate } from "@/lib/replay/aggregate";
+import { aggregate, type ChartBar } from "@/lib/replay/aggregate";
 import { labelOf } from "@/lib/replay/engine";
 import { resolveInstrument } from "@/lib/replay/instruments";
-import { getDataset, loadBars } from "@/lib/replay/storage/repo";
-import { formatDuration, formatInTz, TF_SECONDS } from "@/lib/replay/time";
+import { levelStats } from "@/lib/replay/positionMath";
+import { getDataset, getSession, loadBars } from "@/lib/replay/storage/repo";
+import { availableTimeframes, formatDuration, formatInTz, TF_SECONDS } from "@/lib/replay/time";
 import type { AnalyticsTrade } from "@/lib/replay/analytics";
-import type { JournalEntry, ReplaySession } from "@/lib/replay/types";
+import type { Bars, Drawing, JournalEntry, ReplaySession, Timeframe } from "@/lib/replay/types";
+import { ChartOverlay, type Box } from "../chart/overlay";
 import { cn } from "@/lib/utils";
 import { fmtR, money, tone } from "../format";
 
@@ -20,106 +22,194 @@ function cssVar(name: string, fallback: string) {
   return v || fallback;
 }
 
-/** Candles around a trade, never beyond what its session had revealed. */
+const UP = "#26c17a";
+const DOWN = "#ef4f4f";
+const VIEW_TFS: Timeframe[] = ["M1", "M5", "M15", "M30", "H1", "H4"];
+
+/** Largest index i with bars[i].time <= t (-1 if none). */
+function indexAt(bars: ChartBar[], t: number): number {
+  let lo = 0;
+  let hi = bars.length - 1;
+  let ans = -1;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    if (bars[mid].time <= t) {
+      ans = mid;
+      lo = mid + 1;
+    } else hi = mid - 1;
+  }
+  return ans;
+}
+
+/**
+ * The trade on a chart as it was taken: candles around it (never beyond what
+ * its session had revealed), the position box from entry to exit with its
+ * stop and target zones, the exit path, markers, and the drawings made on the
+ * session. Switch timeframes to see the setup from higher or lower.
+ */
 function TradeChart({ trade, session }: { trade: AnalyticsTrade; session: ReplaySession }) {
   const ref = useRef<HTMLDivElement>(null);
-  const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
   const [error, setError] = useState<string | null>(null);
+  const [data, setData] = useState<{ base: Bars; baseTf: Timeframe; drawings: Drawing[] } | null>(null);
+  const [tf, setTf] = useState<Timeframe>(trade.timeframe);
+  const boundary = session.settings.dayBoundary;
+  const bars = useMemo(() => (data ? aggregate(data.base, data.baseTf, tf, boundary) : []), [data, tf, boundary]);
+  const status: "loading" | "ready" | "error" = error ? "error" : !data ? "loading" : bars.length ? "ready" : "error";
+  const message = error ?? (data && !bars.length ? "No candles were revealed around this trade." : null);
 
+  // Load once per trade: base candles around it and the session's drawings.
   useEffect(() => {
     let disposed = false;
-    let cleanup: (() => void) | null = null;
     (async () => {
       try {
         const ds = await getDataset(session.datasetId);
         if (!ds || ds.missingCandles) throw new Error("The dataset for this session is no longer available — re-import it to view the chart.");
-        const tf = trade.timeframe;
-        const tfs = TF_SECONDS[tf];
-        const from = Math.max(session.historyStartT, trade.entryT - tfs * 120);
+        const span = Math.max(TF_SECONDS[trade.timeframe], TF_SECONDS.H4) * 150;
+        const from = Math.max(session.historyStartT, trade.entryT - span);
         // Only candles the session had revealed (closed by its replay time).
-        const to = Math.min(session.cursorT - TF_SECONDS[ds.timeframe], trade.exitT + tfs * 30);
-        const base = await loadBars(ds.id, from, to);
-        if (disposed || !ref.current) return;
-        const bars = aggregate(base, ds.timeframe, tf, session.settings.dayBoundary);
-        const profit = cssVar("--profit", "#12935a");
-        const loss = cssVar("--loss", "#d9433d");
-        const chart = createChart(ref.current, {
-          autoSize: true,
-          layout: { background: { type: ColorType.Solid, color: cssVar("--card", "#fff") }, textColor: cssVar("--muted", "#696d78"), attributionLogo: true, fontSize: 11 },
-          grid: { vertLines: { color: cssVar("--chart-grid", "#eee") }, horzLines: { color: cssVar("--chart-grid", "#eee") } },
-          timeScale: { timeVisible: true, secondsVisible: false, borderColor: cssVar("--border", "#ddd") },
-          rightPriceScale: { borderColor: cssVar("--border", "#ddd") },
-          localization: { timeFormatter: (t: Time) => formatInTz(t as number, session.displayTimezone, "datetime") },
-        });
-        const spec = resolveInstrument(trade.symbol);
-        const digits = spec?.digits ?? 5;
-        const series = chart.addSeries(CandlestickSeries, {
-          upColor: profit,
-          downColor: loss,
-          wickUpColor: profit,
-          wickDownColor: loss,
-          borderVisible: false,
-          priceFormat: { type: "price", precision: digits, minMove: 1 / 10 ** digits },
-        });
-        series.setData(bars.map((b) => ({ time: b.time as UTCTimestamp, open: b.open, high: b.high, low: b.low, close: b.close })));
-        const at = (t: number) => {
-          let ans = bars[0]?.time ?? t;
-          for (const b of bars) if (b.time <= t) ans = b.time;
-          return ans as UTCTimestamp;
-        };
-        const markers: SeriesMarker<Time>[] = [
-          {
-            time: at(trade.entryT),
-            position: trade.side === "buy" ? "belowBar" : "aboveBar",
-            shape: trade.side === "buy" ? "arrowUp" : "arrowDown",
-            color: trade.side === "buy" ? profit : loss,
-            text: "Entry",
-          },
-          ...trade.exits.map(
-            (e): SeriesMarker<Time> => ({
-              time: at(e.t),
-              position: trade.side === "buy" ? "aboveBar" : "belowBar",
-              shape: "circle",
-              color: e.net >= 0 ? profit : loss,
-              text: `${e.reason.toUpperCase()} ${e.lots}`,
-            }),
-          ),
-        ];
-        markers.sort((a, b) => (a.time as number) - (b.time as number));
-        createSeriesMarkers(series, markers);
-        const accent = cssVar("--accent", "#5e4ff2");
-        series.createPriceLine({ price: trade.entryPrice, color: accent, lineStyle: LineStyle.Solid, lineWidth: 1, title: "Entry", axisLabelVisible: true });
-        if (trade.initialSl !== null) series.createPriceLine({ price: trade.initialSl, color: loss, lineStyle: LineStyle.Dashed, lineWidth: 1, title: "Initial SL", axisLabelVisible: true });
-        if (trade.initialTp !== null) series.createPriceLine({ price: trade.initialTp, color: profit, lineStyle: LineStyle.Dashed, lineWidth: 1, title: "TP", axisLabelVisible: true });
-        chart.timeScale().fitContent();
-        cleanup = () => chart.remove();
-        setStatus("ready");
+        const to = Math.min(session.cursorT - TF_SECONDS[ds.timeframe], trade.exitT + Math.max(TF_SECONDS[trade.timeframe], TF_SECONDS.H1) * 40);
+        const [base, full] = await Promise.all([loadBars(ds.id, from, to), session.drawings.length ? Promise.resolve(session) : getSession(session.id).catch(() => null)]);
+        if (disposed) return;
+        setData({ base, baseTf: ds.timeframe, drawings: (full?.drawings ?? []).filter((d) => d.kind !== "long" && d.kind !== "short") });
       } catch (e) {
-        if (!disposed) {
-          setError(e instanceof Error ? e.message : String(e));
-          setStatus("error");
-        }
+        if (!disposed) setError(e instanceof Error ? e.message : String(e));
       }
     })();
     return () => {
       disposed = true;
-      cleanup?.();
     };
   }, [trade, session]);
 
+  // Draw (and redraw on timeframe change).
+  useEffect(() => {
+    if (!data || !ref.current || !bars.length) return;
+    const el = ref.current;
+    const tfSec = TF_SECONDS[tf];
+    const timeToLogical = (t: number): number | null => {
+      const n = bars.length;
+      if (t > bars[n - 1].time + tfSec - 1) return n - 1 + (t - bars[n - 1].time) / tfSec;
+      if (t < bars[0].time) return (t - bars[0].time) / tfSec;
+      return indexAt(bars, t);
+    };
+    const colors = {
+      font: getComputedStyle(document.body).fontFamily,
+      profit: UP,
+      loss: DOWN,
+      accent: cssVar("--accent", "#c98a00"),
+      text: cssVar("--foreground", "#121316"),
+      muted: cssVar("--muted", "#62646c"),
+      surface: cssVar("--card", "#ffffff"),
+    };
+    const chart = createChart(el, {
+      autoSize: true,
+      layout: { background: { type: ColorType.Solid, color: colors.surface }, textColor: colors.muted, attributionLogo: true, fontSize: 11, fontFamily: colors.font },
+      grid: { vertLines: { color: cssVar("--chart-grid", "#eee") }, horzLines: { color: cssVar("--chart-grid", "#eee") } },
+      timeScale: { timeVisible: true, secondsVisible: false, borderColor: cssVar("--border", "#ddd"), rightOffset: 4 },
+      rightPriceScale: { borderColor: cssVar("--border", "#ddd") },
+      crosshair: { vertLine: { labelBackgroundColor: colors.accent }, horzLine: { labelBackgroundColor: colors.accent } },
+      localization: { timeFormatter: (t: Time) => formatInTz(t as number, session.displayTimezone, "datetime") },
+    });
+    const spec = resolveInstrument(trade.symbol);
+    const digits = spec?.digits ?? 5;
+    const series = chart.addSeries(CandlestickSeries, { upColor: UP, downColor: DOWN, wickUpColor: UP, wickDownColor: DOWN, borderVisible: false, lastValueVisible: false, priceLineVisible: false, priceFormat: { type: "price", precision: digits, minMove: 1 / 10 ** digits } });
+    series.setData(bars.map((b) => ({ time: b.time as UTCTimestamp, open: b.open, high: b.high, low: b.low, close: b.close })));
+    const at = (t: number) => bars[Math.max(0, indexAt(bars, t))].time as UTCTimestamp;
+    const markers: SeriesMarker<Time>[] = [
+      { time: at(trade.entryT), position: trade.side === "buy" ? "belowBar" : "aboveBar", shape: trade.side === "buy" ? "arrowUp" : "arrowDown", color: trade.side === "buy" ? UP : DOWN, text: `${trade.side === "buy" ? "Buy" : "Sell"} ${trade.lots}` },
+      ...trade.exits.map((e): SeriesMarker<Time> => ({ time: at(e.t), position: trade.side === "buy" ? "aboveBar" : "belowBar", shape: "circle", color: e.net >= 0 ? UP : DOWN, text: `${e.reason.toUpperCase()} ${e.lots}` })),
+    ];
+    markers.sort((a, b) => (a.time as number) - (b.time as number));
+    createSeriesMarkers(series, markers);
+    if (trade.finalSl !== null && trade.finalSl !== trade.initialSl) series.createPriceLine({ price: trade.finalSl, color: "#ff9800", lineStyle: LineStyle.Dashed, lineWidth: 1, title: "Final SL", axisLabelVisible: true });
+
+    // TradingView position box: target zone, stop zone, entry line and the path to the exit.
+    const ccy = session.settings.accountCurrency;
+    const stat = (level: number) => levelStats({ side: trade.side, entry: trade.entryPrice, level, lots: trade.lots, spec: spec!, accountCurrency: ccy, conversionRate: session.settings.conversionRate, balance: session.settings.initialBalance });
+    const fmtMoney = new Intl.NumberFormat("en-US", { style: "currency", currency: ccy });
+    const levelText = (kind: string, level: number) => {
+      const st = stat(level);
+      return `${kind}: ${Math.abs(level - trade.entryPrice).toFixed(digits)} (${st.pricePct.toFixed(2)}%) ${st.pips.toFixed(1)} pips, Amount: ${fmtMoney.format(Math.abs(st.money))}`;
+    };
+    const overlay = new ChartOverlay();
+    series.attachPrimitive(overlay);
+    const box: Box = {
+      id: trade.id,
+      kind: "open",
+      side: trade.side,
+      fromT: trade.entryT,
+      toT: trade.exitT,
+      entry: trade.entryPrice,
+      sl: trade.initialSl,
+      tp: trade.initialTp,
+      exitPrice: trade.exitPrice,
+      targetLabel: spec && trade.initialTp !== null ? levelText("Target", trade.initialTp) : undefined,
+      stopLabel: spec && trade.initialSl !== null ? levelText("Stop", trade.initialSl) : undefined,
+      centerLabel: `${trade.exitReason.toUpperCase()} · ${money(trade.netPnl, ccy, { signed: true })} · ${fmtR(trade.rMultiple)}\n${trade.lots.toFixed(2)} lots · held ${formatDuration(trade.holdingSeconds)}`,
+      centerColor: trade.netPnl >= 0 ? UP : DOWN,
+    };
+    overlay.update({
+      boxes: [box],
+      pills: [],
+      drawings: data.drawings,
+      draft: null,
+      selectedId: null,
+      hideDrawings: false,
+      sessionBands: [],
+      barsBetween: (t1, t2) => {
+        const a = timeToLogical(Math.min(t1, t2));
+        const b = timeToLogical(Math.max(t1, t2));
+        return a === null || b === null ? 0 : Math.round(b - a);
+      },
+      pipSize: spec?.pipSize ?? 0.0001,
+      digits,
+      edgeT: null,
+      axisLabels: [
+        { price: trade.entryPrice, text: trade.entryPrice.toFixed(digits), color: "#787b86" },
+        ...(trade.initialTp !== null ? [{ price: trade.initialTp, text: trade.initialTp.toFixed(digits), color: UP }] : []),
+        ...(trade.initialSl !== null ? [{ price: trade.initialSl, text: trade.initialSl.toFixed(digits), color: DOWN }] : []),
+      ],
+      timeSpan: null,
+      colors,
+      timeToX: (t) => {
+        const l = timeToLogical(t);
+        return l === null ? null : chart.timeScale().logicalToCoordinate(l as Logical);
+      },
+      barSpacing: () => chart.timeScale().options().barSpacing,
+    });
+    // Frame the trade with some context on both sides.
+    const a = timeToLogical(trade.entryT) ?? 0;
+    const b = timeToLogical(trade.exitT) ?? bars.length - 1;
+    const pad = Math.max(25, (b - a) * 0.8);
+    chart.timeScale().setVisibleLogicalRange({ from: a - pad * 1.6, to: b + pad });
+    return () => chart.remove();
+  }, [data, bars, tf, trade, session]);
+
+  const tfs = data ? availableTimeframes(data.baseTf).filter((t) => VIEW_TFS.includes(t)) : [];
   return (
-    <div className="relative h-72 overflow-hidden rounded-xl border border-border">
-      <div ref={ref} className="absolute inset-0" />
-      {status === "loading" && (
-        <div className="absolute inset-0 flex items-center justify-center text-sm text-muted">
-          <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Loading candles…
+    <div>
+      {tfs.length > 1 && (
+        <div className="mb-2 flex items-center gap-1" role="tablist" aria-label="Chart timeframe">
+          {tfs.map((t) => (
+            <button key={t} type="button" role="tab" aria-selected={t === tf} onClick={() => setTf(t)} className={cn("h-7 rounded-md px-2 text-xs font-semibold", t === tf ? "bg-accent-soft text-accent" : "text-muted hover:bg-surface-2 hover:text-foreground")}>
+              {t}
+            </button>
+          ))}
+          <span className="ml-auto text-[11px] text-muted">As taken in the replay — no candles after what the session revealed.</span>
         </div>
       )}
-      {status === "error" && (
-        <div className="absolute inset-0 flex items-center justify-center p-4 text-center text-sm text-muted">
-          <AlertTriangle className="mr-2 h-4 w-4 text-warning" /> {error}
-        </div>
-      )}
+      <div className="relative h-[420px] overflow-hidden rounded-xl border border-border" data-testid="trade-chart">
+        <div ref={ref} className="absolute inset-0" />
+        {status === "loading" && (
+          <div className="absolute inset-0 flex items-center justify-center text-sm text-muted">
+            <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Loading candles…
+          </div>
+        )}
+        {status === "error" && (
+          <div className="absolute inset-0 flex items-center justify-center p-4 text-center text-sm text-muted">
+            <AlertTriangle className="mr-2 h-4 w-4 text-warning" /> {message}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

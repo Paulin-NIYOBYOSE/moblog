@@ -96,7 +96,8 @@ export default function WorkstationHeader({
       </div>
 
       {/* Playback */}
-      <div className="relative flex items-center gap-0.5 overflow-hidden rounded-2xl border border-border bg-card p-1" role="group" aria-label="Replay controls">
+      {/* No overflow clipping here: the speed and ⋯ menus open below this group. */}
+      <div className="relative flex items-center gap-0.5 rounded-2xl border border-border bg-card p-1" role="group" aria-label="Replay controls">
         <button type="button" onClick={onBack} disabled={snap.index <= snap.startIndex} className="flex h-8 w-8 items-center justify-center rounded-xl text-muted hover:bg-surface-2 hover:text-foreground disabled:opacity-35" title="Previous candle (←)" aria-label="Previous candle" data-testid="replay-back">
           <ChevronLeft className="h-4 w-4" />
         </button>
@@ -125,7 +126,7 @@ export default function WorkstationHeader({
         )}
         <Popover
           trigger={({ toggle }) => (
-            <button type="button" onClick={toggle} className="flex h-8 items-center gap-1.5 rounded-xl px-2.5 text-[13px] font-semibold hover:bg-surface-2" title="Playback speed" aria-label={`Playback speed ${snap.speed}×`} data-testid="replay-speed">
+            <button type="button" onClick={toggle} className="flex h-8 items-center gap-1.5 rounded-xl px-2.5 text-[13px] font-semibold hover:bg-surface-2" title="Playback speed (+ / − keys)" aria-label={`Playback speed ${snap.speed}×`} data-testid="replay-speed">
               <Gauge className="h-3.5 w-3.5" /> {snap.speed}×
             </button>
           )}

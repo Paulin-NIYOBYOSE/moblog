@@ -16,6 +16,7 @@ import { useConfirm } from "@/components/ConfirmContext";
 import { useToast } from "@/components/ToastContext";
 import ReplayNav, { ReplayFooter } from "@/components/replay/ReplayNav";
 import JournalEditor from "@/components/replay/JournalEditor";
+import TradeExplorer from "@/components/replay/analytics/TradeExplorer";
 import VirtualRows from "@/components/replay/VirtualRows";
 import { fmtR, money, tone } from "@/components/replay/format";
 import { enrichTrades, sortByExit, type AnalyticsTrade } from "@/lib/replay/analytics";
@@ -151,6 +152,8 @@ function JournalPage() {
   const [tagFilter, setTagFilter] = useState<string[]>([]);
   const [outcome, setOutcome] = useState<"all" | "win" | "loss" | "noted">("all");
   const [edit, setEdit] = useState<{ trade: AnalyticsTrade; draft: JournalEntry } | null>(null);
+  /** Trade shown on the chart, as it was taken. */
+  const [viewing, setViewing] = useState<AnalyticsTrade | null>(null);
 
   const all = useMemo(
     () => sortByExit(sessions.flatMap((s) => enrichTrades(s.ledger, s.journal, s.strategy, s.name))).reverse(),
@@ -286,7 +289,14 @@ function JournalPage() {
                     const j = journalOf(t);
                     const ccy = sessions.find((s) => s.id === t.sessionId)?.settings.accountCurrency ?? "USD";
                     return (
-                      <div className={cn(COLS, "h-full border-b border-border/60 text-xs")}>
+                      <div
+                        className={cn(COLS, "h-full cursor-pointer border-b border-border/60 text-xs hover:bg-surface-2/70")}
+                        onClick={(e) => {
+                          if (!(e.target as HTMLElement).closest("button")) setViewing(t);
+                        }}
+                        title="Show this trade on the chart, as it was taken"
+                        data-testid="journal-trade-row"
+                      >
                         <span className="tabular-nums text-muted">{formatInTz(t.exitT, "UTC", "short")}</span>
                         <span className="truncate">
                           {t.sessionName} <span className="text-faint">· {t.strategy}</span>
@@ -315,6 +325,8 @@ function JournalPage() {
       </div>
 
       <ReplayFooter />
+
+      <TradeExplorer trade={viewing} session={viewing ? sessions.find((s) => s.id === viewing.sessionId) ?? null : null} journal={viewing ? journalOf(viewing) : undefined} onClose={() => setViewing(null)} />
 
       <Drawer
         open={edit !== null}

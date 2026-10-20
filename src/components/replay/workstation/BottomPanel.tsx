@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { BarChart3, ChevronDown, ChevronUp, NotebookPen, Scale, X } from "lucide-react";
+import { BarChart3, CandlestickChart, ChevronDown, ChevronUp, NotebookPen, Scale, SlidersHorizontal, X } from "lucide-react";
 import { METRIC_HELP } from "@/lib/replay/analytics";
 import type { ControllerSnapshot, NewCommand } from "@/lib/replay/controller";
 import { labelOf, type ApplyResult } from "@/lib/replay/engine";
@@ -55,6 +55,8 @@ export default function BottomPanel({
   onSubmit,
   onOpenJournal,
   onNotes,
+  onManage,
+  onViewTrade,
   collapsed,
   onToggleCollapsed,
 }: {
@@ -62,6 +64,10 @@ export default function BottomPanel({
   onSubmit: (cmd: NewCommand) => ApplyResult;
   onOpenJournal: (tradeId: string) => void;
   onNotes: (notes: string) => void;
+  /** Open the "Manage position" dialog (partial close, stop/target for the rest). */
+  onManage: (positionId: string) => void;
+  /** Show a closed trade on a chart, as it was taken. */
+  onViewTrade: (tradeId: string) => void;
   collapsed: boolean;
   onToggleCollapsed: () => void;
 }) {
@@ -136,10 +142,10 @@ export default function BottomPanel({
       </div>
       {!collapsed && (
         <div className="min-h-0 flex-1 overflow-auto rounded-2xl border border-border bg-card text-xs">
-          {tab === "positions" && <PositionsTab snap={snap} onSubmit={onSubmit} onOpenJournal={onOpenJournal} />}
+          {tab === "positions" && <PositionsTab snap={snap} onSubmit={onSubmit} onOpenJournal={onOpenJournal} onManage={onManage} />}
           {tab === "orders" && <OrdersTab orders={snap.orders} digits={d} onSubmit={onSubmit} tz={tz} />}
-          {tab === "history" && <HistoryTab trades={snap.trades} digits={d} ccy={ccy} tz={tz} journal={session.journal} onOpenJournal={onOpenJournal} initialBalance={session.settings.initialBalance} />}
-          {tab === "journal" && <JournalTab snap={snap} onOpenJournal={onOpenJournal} />}
+          {tab === "history" && <HistoryTab trades={snap.trades} digits={d} ccy={ccy} tz={tz} journal={session.journal} onOpenJournal={onOpenJournal} onViewTrade={onViewTrade} initialBalance={session.settings.initialBalance} />}
+          {tab === "journal" && <JournalTab snap={snap} onOpenJournal={onOpenJournal} onManage={onManage} onViewTrade={onViewTrade} />}
           {tab === "notes" && (
             <div className="h-full p-2">
               <textarea
@@ -170,7 +176,7 @@ export default function BottomPanel({
   );
 }
 
-function PositionsTab({ snap, onSubmit, onOpenJournal }: { snap: ControllerSnapshot; onSubmit: (c: NewCommand) => ApplyResult; onOpenJournal: (id: string) => void }) {
+function PositionsTab({ snap, onSubmit, onOpenJournal, onManage }: { snap: ControllerSnapshot; onSubmit: (c: NewCommand) => ApplyResult; onOpenJournal: (id: string) => void; onManage: (id: string) => void }) {
   const { spec, quote, session } = snap;
   const ccy = session.settings.accountCurrency;
   if (!snap.positions.length) return <p className="px-3 py-6 text-center text-muted">No open positions. Use + Place Order, the Buy/Sell buttons or a position tool.</p>;
@@ -223,6 +229,9 @@ function PositionsTab({ snap, onSubmit, onOpenJournal }: { snap: ControllerSnaps
               </td>
               <td className="px-3 py-1">
                 <div className="flex justify-end gap-1">
+                  <button type="button" className="btn btn-secondary btn-sm !px-2" title="Close part of the position, set the stop and target for the rest" onClick={() => onManage(p.id)} data-testid="manage-position">
+                    <SlidersHorizontal className="h-3.5 w-3.5" /> Manage
+                  </button>
                   <button
                     type="button"
                     className="btn btn-ghost btn-sm !px-1.5"
@@ -316,6 +325,7 @@ function HistoryTab({
   tz,
   journal,
   onOpenJournal,
+  onViewTrade,
   initialBalance,
 }: {
   trades: TradeRecord[];
@@ -324,6 +334,7 @@ function HistoryTab({
   tz: string;
   journal: Record<string, JournalEntry>;
   onOpenJournal: (id: string) => void;
+  onViewTrade: (id: string) => void;
   initialBalance: number;
 }) {
   const rows = useMemo(() => [...trades].reverse(), [trades]);
@@ -361,7 +372,14 @@ function HistoryTab({
         }
         empty={<p className="px-3 py-6 text-center text-muted">Closed trades appear here.</p>}
         renderRow={(t) => (
-          <div className={cn(HISTORY_COLS, "h-full border-b border-border/60")} data-testid="history-row">
+          <div
+            className={cn(HISTORY_COLS, "h-full cursor-pointer border-b border-border/60 hover:bg-surface-2/70")}
+            data-testid="history-row"
+            onClick={(e) => {
+              if (!(e.target as HTMLElement).closest("button")) onViewTrade(t.id);
+            }}
+            title="Show this trade on the chart"
+          >
             <span className="tabular-nums text-muted">{formatInTz(t.exitT, tz, "short")}</span>
             <span>
               <SideTag side={t.side} />
@@ -387,7 +405,7 @@ function HistoryTab({
   );
 }
 
-function JournalTab({ snap, onOpenJournal }: { snap: ControllerSnapshot; onOpenJournal: (id: string) => void }) {
+function JournalTab({ snap, onOpenJournal, onManage, onViewTrade }: { snap: ControllerSnapshot; onOpenJournal: (id: string) => void; onManage: (id: string) => void; onViewTrade: (id: string) => void }) {
   const items = [
     ...snap.positions.map((p) => ({ id: p.id, side: p.side, label: "Open", t: p.entryT, net: null as number | null })),
     ...[...snap.trades].reverse().map((t) => ({ id: t.id, side: t.side, label: t.exitReason.toUpperCase(), t: t.entryT, net: t.netPnl })),
@@ -405,6 +423,15 @@ function JournalTab({ snap, onOpenJournal }: { snap: ControllerSnapshot; onOpenJ
             <span className={cn("w-20 shrink-0 text-right tabular-nums", tone(it.net))}>{it.net === null ? "—" : money(it.net, snap.session.settings.accountCurrency, { signed: true })}</span>
             <span className="min-w-0 flex-1 truncate text-muted">{j?.notes || j?.preTrade || <span className="text-faint">No notes</span>}</span>
             {j?.tags?.length ? <span className="hidden truncate text-[10.5px] text-faint sm:inline">{j.tags.map((t) => `#${t}`).join(" ")}</span> : null}
+            {it.net === null ? (
+              <button type="button" className="btn btn-secondary btn-sm" onClick={() => onManage(it.id)} title="Close part of the position, set the stop and target for the rest">
+                <SlidersHorizontal className="h-3.5 w-3.5" /> Manage
+              </button>
+            ) : (
+              <button type="button" className="btn btn-ghost btn-sm" onClick={() => onViewTrade(it.id)} title="Show this trade on the chart">
+                <CandlestickChart className="h-3.5 w-3.5" /> Chart
+              </button>
+            )}
             <button type="button" className="btn btn-secondary btn-sm" onClick={() => onOpenJournal(it.id)}>
               <NotebookPen className="h-3.5 w-3.5" /> {j ? "Edit" : "Add"}
             </button>

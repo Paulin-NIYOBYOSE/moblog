@@ -6,7 +6,7 @@ import { AlertTriangle, ArrowLeft, Flag, GripHorizontal, Loader2, NotebookPen, X
 import Modal from "@/components/ui/Modal";
 import { useConfirm } from "@/components/ConfirmContext";
 import { useToast } from "@/components/ToastContext";
-import { ReplayController, type NewCommand, type RewindPlan } from "@/lib/replay/controller";
+import { ReplayController, SPEEDS, type NewCommand, type RewindPlan } from "@/lib/replay/controller";
 import { duplicateSession, pinDataset } from "@/lib/replay/session";
 import { getDataset, getSession, saveSession, validateRange } from "@/lib/replay/storage/repo";
 import { planRequest, sessionDataRequests, type PipelineResult } from "@/lib/replay/marketData";
@@ -30,6 +30,9 @@ import DrawingTools from "./DrawingTools";
 import FavoritesBar from "./FavoritesBar";
 import IndicatorsDialog from "./IndicatorsDialog";
 import OrderPanel from "./OrderPanel";
+import PositionManager from "./PositionManager";
+import TradeExplorer from "../analytics/TradeExplorer";
+import { enrichTrades } from "@/lib/replay/analytics";
 import SettingsModal from "./SettingsModal";
 import StatsDrawer from "./StatsDrawer";
 import { readLocal, readLocalJson, useTerminalTheme, writeLocal } from "./terminal";
@@ -190,6 +193,10 @@ function WorkstationInner({ controller }: { controller: ReplayController }) {
   const [menu, setMenu] = useState<{ e: ChartContextEvent; items: (ContextItem | "divider")[] } | null>(null);
   /** A position drawing just placed: ask whether to trade it. */
   const [usePrompt, setUsePrompt] = useState<string | null>(null);
+  /** Open position in the "Manage position" dialog. */
+  const [managing, setManaging] = useState<string | null>(null);
+  /** Closed trade shown on a chart, as it was taken. */
+  const [viewTradeId, setViewTradeId] = useState<string | null>(null);
   /** Position drawing currently filling the order panel (hidden behind the order preview). */
   const [linkedDrawing, setLinkedDrawing] = useState<string | null>(null);
   /** The ticket as it was before a drawing filled it — restored afterwards. */
@@ -426,6 +433,9 @@ function WorkstationInner({ controller }: { controller: ReplayController }) {
       case "delete-drawing":
         deleteDrawing(a.id);
         break;
+      case "manage-position":
+        setManaging(a.id);
+        break;
     }
   };
 
@@ -564,13 +574,19 @@ function WorkstationInner({ controller }: { controller: ReplayController }) {
           setTool(t);
           if (isIdleTool(t)) setIdleTool(t);
         }
+      } else if (e.key === "+" || e.key === "=" || e.key === "-" || e.key === "_") {
+        // Playback speed up / down through the speed steps.
+        const i = SPEEDS.indexOf(controller.getSnapshot().speed as (typeof SPEEDS)[number]);
+        const next = SPEEDS[Math.max(0, Math.min(SPEEDS.length - 1, (i < 0 ? 0 : i) + (e.key === "-" || e.key === "_" ? -1 : 1)))];
+        controller.setSpeed(next);
+        toast.success(`Speed ${next}×`);
       } else if (e.key === "?") {
         setShortcutsOpen(true);
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [controller, stepBack, selectedDrawing, idleTool, deleteDrawing, undo, redo]);
+  }, [controller, stepBack, selectedDrawing, idleTool, deleteDrawing, undo, redo, toast]);
   // Flush unsaved work when the tab is hidden or closed.
   useEffect(() => {
     const onHide = () => {
@@ -619,6 +635,10 @@ function WorkstationInner({ controller }: { controller: ReplayController }) {
   };
 
   const warnings = snap.warnings;
+  const viewTrade = useMemo(() => {
+    const t = viewTradeId ? snap.trades.find((q) => q.id === viewTradeId) : undefined;
+    return t ? enrichTrades([t], snap.session.journal, snap.session.strategy, snap.session.name)[0] : null;
+  }, [viewTradeId, snap.trades, snap.session.journal, snap.session.strategy, snap.session.name]);
   const activeIndicators = snap.session.indicators.filter((i) => i.visible).length;
 
   return (
@@ -874,6 +894,8 @@ function WorkstationInner({ controller }: { controller: ReplayController }) {
           onSubmit={submit}
           onOpenJournal={openJournal}
           onNotes={(n) => controller.setNotes(n)}
+          onManage={setManaging}
+          onViewTrade={setViewTradeId}
           collapsed={bottomCollapsed}
           onToggleCollapsed={() => {
             setBottomCollapsed((v) => {
@@ -891,6 +913,7 @@ function WorkstationInner({ controller }: { controller: ReplayController }) {
           {(
             [
               ["Space", "Play / pause"],
+              ["+ / −", "Playback speed up / down"],
               ["→", "Next candle"],
               ["Shift + →", "Next 1-minute step inside the candle"],
               ["←", "Previous candle (asks before undoing trades)"],
@@ -940,6 +963,9 @@ function WorkstationInner({ controller }: { controller: ReplayController }) {
       >
         <JournalEditor value={journalDraft} onChange={setJournalDraft} strategies={strategies} defaultStrategy={snap.session.strategy} onCaptureScreenshot={() => chartHandle.current?.screenshot() ?? null} />
       </Modal>
+
+      {managing && <PositionManager snap={snap} positionId={managing} onSubmit={submit} onClose={() => setManaging(null)} />}
+      {viewTrade && <TradeExplorer trade={viewTrade} session={snap.session} journal={snap.session.journal[viewTrade.id]} onClose={() => setViewTradeId(null)} />}
 
       {menu && <ChartContextMenu x={menu.e.clientX} y={menu.e.clientY} title={`At ${menu.e.price.toFixed(snap.spec.digits)}`} items={menu.items} onClose={() => setMenu(null)} />}
       {settingsOpen && (

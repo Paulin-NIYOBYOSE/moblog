@@ -387,6 +387,7 @@ export default function ReplayChart(props: Props) {
             text: hot(key) ? `${tag}  ${openPips >= 0 ? "+" : "−"}${Math.abs(openPips).toFixed(1)} pips  ${signedMoney(pnl, ccy)}  ${signedPct(pct(pnl))}${rr(pos.entryPrice, sl, tp)}` : `${tag}  ${signedMoney(pnl, ccy)}`,
             color: pos.side === "buy" ? TV.up : TV.down,
             close: { type: "close-position", id: pos.id },
+            click: { type: "manage-position", id: pos.id },
           },
         ],
       });

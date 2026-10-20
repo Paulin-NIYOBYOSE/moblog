@@ -580,3 +580,60 @@ test("TradingView-style drawing: press-drag draws without panning, moves keep th
   await expect.poll(async () => (await view()).markers).toBeGreaterThanOrEqual(2);
   expect(errors, errors.join("\n")).toEqual([]);
 });
+
+test("speed menu works, Manage position closes part and re-targets the rest, trades open on the chart from the workspace and the journal", async ({ page }, info) => {
+  const errors = collectErrors(page);
+  const { file } = writeHistdataFixture(info.outputDir, "DAT_ASCII_EURUSD_M1_2024.csv", utc(2024, 1, 2), 4 * 1440, (i) => 1.1 + Math.sin(i / 200) * 0.002 + Math.sin(i / 17) * 0.0003);
+  await login(page);
+  await importDataset(page, file);
+  await sessionFromDataset(page, "2024-01-03", "2024-01-05", "7");
+
+  // Speed: the menu is really on screen (not clipped) and changes the playback speed; "+" raises it.
+  await page.getByTestId("replay-speed").click();
+  const five = page.getByRole("menuitemradio", { name: /^5×/ });
+  const fb = (await five.boundingBox())!;
+  const onTop = await page.evaluate(([x, y]) => document.elementFromPoint(x, y)?.closest('[role="menuitemradio"]')?.textContent ?? null, [fb.x + fb.width / 2, fb.y + fb.height / 2]);
+  expect(onTop).toContain("5×");
+  await page.mouse.click(fb.x + fb.width / 2, fb.y + fb.height / 2);
+  await expect(page.getByTestId("replay-speed")).toHaveText(/5×/);
+  await page.mouse.move(5, 300);
+  await page.keyboard.press("+");
+  await expect(page.getByTestId("replay-speed")).toHaveText(/10×/);
+
+  // A 1.00-lot long, then Manage position: close 50% and set a new target for the remaining 0.50.
+  await page.getByTestId("open-order-panel").click();
+  await page.getByTestId("ticket-lots").fill("1");
+  await page.getByTestId("ticket-sl").fill("20");
+  await page.getByTestId("ticket-tp").fill("40");
+  await page.getByTestId("ticket-submit").click();
+  await expect(page.getByTestId("position-row")).toHaveCount(1);
+  await page.getByTestId("manage-position").click();
+  const dialog = page.getByTestId("position-manager");
+  await expect(dialog).toBeVisible();
+  await page.getByTestId("manage-part-50").click();
+  await expect(page.getByTestId("manage-summary")).toContainText("Remaining: 0.50 lots");
+  const entry = Number((await page.getByTestId("position-row").locator("td").nth(2).innerText()).trim());
+  const newTp = (entry + 0.006).toFixed(5);
+  await page.getByTestId("manage-tp").fill(newTp);
+  await page.getByTestId("manage-apply").click();
+  await expect(dialog).toHaveCount(0);
+  await expect(page.getByTestId("position-row").locator("td").nth(1)).toHaveText("0.50");
+  await expect(page.getByTestId("position-row").getByLabel("Take-profit")).toHaveValue(newTp);
+
+  // Close the rest; clicking the closed trade shows it on a chart with its box and markers.
+  await page.getByTestId("close-position").click();
+  await page.getByRole("tab", { name: /^Closed/ }).click();
+  await page.getByTestId("history-row").first().click();
+  await expect(page.getByTestId("trade-chart").locator("canvas").first()).toBeVisible();
+  await expect(page.getByRole("dialog")).toContainText("Exits"); // partial + final exit listed
+  await page.keyboard.press("Escape");
+
+  // The journal page: clicking a trade opens the same chart view.
+  await page.getByTestId("replay-save").click();
+  await expect(page.getByTestId("replay-save")).toContainText("Saved");
+  await page.goto("/replay/journal");
+  await page.getByTestId("journal-trade-row").first().click();
+  await expect(page.getByTestId("trade-chart").locator("canvas").first()).toBeVisible();
+  await expect(page.getByTestId("trade-chart")).not.toContainText("Loading");
+  expect(errors, errors.join("\n")).toEqual([]);
+});

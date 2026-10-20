@@ -41,7 +41,8 @@ export type OverlayAction =
   | { type: "remove-level"; owner: "position" | "order"; id: string; field: "sl" | "tp" }
   | { type: "cancel-order"; id: string }
   | { type: "place-projection"; id: string }
-  | { type: "delete-drawing"; id: string };
+  | { type: "delete-drawing"; id: string }
+  | { type: "manage-position"; id: string };
 
 /** A clickable or draggable area recorded during the last paint. */
 export interface Region {
@@ -81,6 +82,8 @@ export interface Pill {
   /** Dashed outline "ghost" pill (drag to add SL/TP). */
   ghost?: boolean;
   close?: OverlayAction;
+  /** Clicking the pill's body (not its ✕). */
+  click?: OverlayAction;
   drag?: DragTarget;
 }
 
@@ -228,7 +231,8 @@ class Renderer implements IPrimitivePaneRenderer {
     if (yE === null || x1 === null) return null;
     let x2 = b.toT !== null ? st.timeToX(b.toT) : edge !== null ? edge + st.barSpacing() * 6 : null;
     if (x2 === null) x2 = x1 + st.barSpacing() * 8;
-    if (b.kind !== "closed" && b.kind !== "projection") x2 = Math.max(x2, x1 + st.barSpacing() * 10);
+    // Live boxes (no end time yet) are at least 10 bars wide so they stay readable.
+    if (b.toT === null && b.kind !== "closed" && b.kind !== "projection") x2 = Math.max(x2, x1 + st.barSpacing() * 10);
     const left = Math.min(x1, x2);
     const right = Math.max(x1, x2, left + 4);
     return { left, right, yE, yS: b.sl !== null ? y(b.sl) : null, yT: b.tp !== null ? y(b.tp) : null };
@@ -284,7 +288,7 @@ class Renderer implements IPrimitivePaneRenderer {
         ctx.lineTo(g.right, Math.round(g.yE) + 0.5);
         ctx.stroke();
       }
-      if (b.kind === "closed" && b.exitPrice !== undefined && b.toT !== null) {
+      if (b.exitPrice !== undefined && b.toT !== null) {
         const yX = y(b.exitPrice);
         if (yX !== null) {
           ctx.save();
@@ -379,6 +383,7 @@ class Renderer implements IPrimitivePaneRenderer {
         }
         ctx.fillText(p.text, x + 6, py + 0.5);
         if (p.drag) regions.push({ x, y: top, w: w - closeW, h, cursor: "ns-resize", drag: p.drag });
+        else if (p.click) regions.push({ x, y: top, w: w - closeW, h, cursor: "pointer", action: p.click });
         if (p.close) {
           const cx0 = x + w - closeW;
           ctx.fillStyle = p.ghost ? p.color : "rgba(255,255,255,0.9)";
