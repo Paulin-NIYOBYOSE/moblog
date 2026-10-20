@@ -17,6 +17,11 @@ export interface TicketState {
   note: string;
 }
 
+/** Money base that %-risk sizing uses: the starting or the current balance. */
+export function riskBase(snap: Pick<ControllerSnapshot, "session" | "balance">): number {
+  return snap.session.settings.riskBase === "initial" ? snap.session.settings.initialBalance : snap.balance;
+}
+
 export function initialTicket(): TicketState {
   return { side: "buy", orderType: "market", entry: "", slMode: "pips", sl: "20", tpMode: "pips", tp: "40", note: "" };
 }
@@ -66,7 +71,7 @@ export function deriveTicket(t: TicketState, snap: ControllerSnapshot): DerivedT
   const sizing = computeSizing({
     mode: s.riskMode,
     side: t.side,
-    equity: snap.equity,
+    equity: riskBase(snap),
     riskPercent: s.riskPercent,
     riskMoney: s.riskMoney,
     fixedLots: s.fixedLots,

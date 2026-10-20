@@ -106,10 +106,13 @@ export function hitDrawing(drawings: Drawing[], x: number, y: number, pr: Projec
 /**
  * Apply a drag. `from`/`to` are the market coordinates under the pointer at
  * the start of the drag and now; `orig` is the drawing at drag start.
+ * `shiftT` moves a time by the number of candles the pointer moved (so a
+ * drawing keeps its shape across weekends); without it, times shift by seconds.
  */
-export function dragDrawing(orig: Drawing, part: HitPart, from: { t: number; p: number }, to: { t: number; p: number }, round: (p: number) => number): Drawing {
+export function dragDrawing(orig: Drawing, part: HitPart, from: { t: number; p: number }, to: { t: number; p: number }, round: (p: number) => number, shiftT?: (t: number) => number): Drawing {
   const dt = to.t - from.t;
   const dp = to.p - from.p;
+  const move = (t: number) => (shiftT ? shiftT(t) : t + dt);
   if (part === "p0" || part === "p1") {
     const k = part === "p0" ? 0 : 1;
     return { ...orig, points: orig.points.map((q, i) => (i === k ? { t: to.t, p: round(to.p) } : q)) };
@@ -118,9 +121,9 @@ export function dragDrawing(orig: Drawing, part: HitPart, from: { t: number; p: 
     case "hline":
       return { ...orig, points: [{ t: orig.points[0].t, p: round(orig.points[0].p + dp) }] };
     case "vline":
-      return { ...orig, points: [{ t: orig.points[0].t + dt, p: orig.points[0].p }] };
+      return { ...orig, points: [{ t: move(orig.points[0].t), p: orig.points[0].p }] };
     default:
-      return { ...orig, points: orig.points.map((q) => ({ t: q.t + dt, p: round(q.p + dp) })) };
+      return { ...orig, points: orig.points.map((q) => ({ t: move(q.t), p: round(q.p + dp) })) };
   }
 }
 

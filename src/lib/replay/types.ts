@@ -171,6 +171,8 @@ export interface SessionSettings {
   conversionRate: number | null;
   dayBoundary: DayBoundary;
   pauseOnFill: boolean;
+  /** Base for %-risk sizing: the starting balance or the current balance (default). */
+  riskBase?: "initial" | "balance";
 }
 
 interface CommandBase {
@@ -354,7 +356,10 @@ export interface IndicatorConfig {
   param2?: number;
   param3?: number;
   color: string;
+  /** On the chart (added). Defaults that were never added stay `false`. */
   visible: boolean;
+  /** Added but temporarily hidden (eye toggle in the legend). */
+  hidden?: boolean;
 }
 
 export interface JournalEntry {
@@ -405,7 +410,7 @@ export interface ReplaySession {
   archived?: boolean;
   source?: SessionSource;
   /** Chart preferences for this session. */
-  chartPrefs?: { hideDrawings?: boolean; sessionShading?: boolean; autoScroll?: boolean };
+  chartPrefs?: { hideDrawings?: boolean; sessionShading?: boolean; autoScroll?: boolean; lockDrawings?: boolean; magnet?: boolean; pastTrades?: boolean; tradeLabels?: boolean };
   createdAt: number;
   updatedAt: number;
   parentId?: string;

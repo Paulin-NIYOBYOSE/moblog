@@ -23,6 +23,25 @@ same definitions appear as tooltips in the app.
 | Holding time | Final exit time − entry time, in replay (market) time |
 | Long vs short | The same figures per direction |
 
+## Dashboard
+
+The top of the page follows FX Replay / trading-journal dashboards:
+
+- **KPI strip:**
+  - Net P&L and trade count.
+  - Trade expectancy, per trade in money and in R.
+  - Profit factor, with a ring showing gross profit vs gross loss.
+  - Win %, with a gauge splitting wins, breakevens and losses.
+  - Avg win / loss trade, as a ratio bar.
+- **Daily net cumulative P&L:** running total by exit day (UTC), shaded green
+  above zero and red below.
+- **Net daily P&L:** one bar per exit day.
+- **P&L calendar:** month view with each day's net P&L and trade count, plus
+  weekly totals. Arrows step through the months that have trades.
+
+Clicking a bar, the cumulative curve or a calendar day lists that day's trades
+in the table below.
+
 ## Charts
 
 Equity curve with drawdown below it · cumulative R · R distribution (0.5R
@@ -40,10 +59,20 @@ explains what's missing when there isn't enough data.
 
 ## Combining sessions
 
-Analytics default to one session. Selecting several shows a banner. Money
-metrics then use the **sum** of the sessions' starting balances, and trades are
-ordered by historical exit time. If account currencies differ, the banner says
-money totals aren't meaningful; R metrics remain comparable.
+Analytics default to one session. Selecting several shows a banner with the
+balance to measure against:
+
+- **One account** (default): every selected session's trades run on a single
+  account, in the order they closed. This shows how the strategy behaves
+  traded as one account. Its starting balance defaults to the first selected
+  session's and can be typed. Each trade's money P&L is as recorded in its
+  session, which sized it on that session's balance.
+- **Each session's own (summed):** returns and drawdown use the sum of the
+  sessions' starting balances.
+
+Either way trades are ordered by historical exit time and R metrics stay
+comparable. If account currencies differ, the banner says money totals aren't
+meaningful.
 
 ## Filters
 

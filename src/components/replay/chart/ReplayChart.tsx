@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useImperativeHandle, useRef, useState, type Ref } from "react";
-import { ArrowRightToLine, Maximize2, MoveHorizontal } from "lucide-react";
+import { ChevronsRight, Eye, EyeOff, Settings2, X } from "lucide-react";
 import {
   CandlestickSeries,
   ColorType,
@@ -9,6 +9,7 @@ import {
   HistogramSeries,
   LineSeries,
   LineStyle,
+  PriceScaleMode,
   TickMarkType,
   createChart,
   createSeriesMarkers,
@@ -27,14 +28,22 @@ import type { ChartBar } from "@/lib/replay/aggregate";
 import type { ControllerSnapshot, ReplayController } from "@/lib/replay/controller";
 import { labelOf } from "@/lib/replay/engine";
 import { atr, bollinger, ema, macd, rsi, sma } from "@/lib/replay/indicators";
-import { levelLabel, levelStats, rewardRisk, signedMoney, signedPct } from "@/lib/replay/positionMath";
+import { levelStats, rewardRisk, signedMoney, signedPct } from "@/lib/replay/positionMath";
 import { computeSizing } from "@/lib/replay/sizing";
 import { formatInTz, marketSessionOf, TF_SECONDS } from "@/lib/replay/time";
 import type { Drawing, IndicatorConfig, Side } from "@/lib/replay/types";
 import { useTheme } from "@/components/ThemeContext";
-import { ChartOverlay, TV, type Box, type DragTarget, type OverlayAction, type OverlayColors, type Pill, type PillRow } from "./overlay";
+import { ChartOverlay, TV, type AxisLabel, type Box, type DragTarget, type OverlayAction, type OverlayColors, type Pill, type PillRow, type TimeMark } from "./overlay";
 import { newProjection, projectionLevels, withLevels } from "./projection";
 import { dragDrawing, hitDrawing, ONE_POINT, TWO_POINT, type HitPart, type Projector } from "./drawings";
+import { riskBase } from "../workstation/ticket";
+import { showsContext } from "@/lib/replay/history";
+import { indicatorTitle } from "../workstation/IndicatorsDialog";
+import { TF_SHORT } from "../workstation/ChartTopBar";
+import { cn } from "@/lib/utils";
+
+/** Candle colours (bright, terminal style). Position zones keep TradingView's palette. */
+export const CANDLE = { up: "#26c17a", down: "#ef4f4f" } as const;
 
 export type { DragTarget, OverlayAction } from "./overlay";
 export type DrawTool = "cursor" | "crosshair" | "hline" | "vline" | "ray" | "trend" | "rect" | "fib" | "text" | "pricerange" | "daterange" | "long" | "short";
@@ -50,6 +59,9 @@ export interface TicketPreview {
   sl: number | null;
   tp: number | null;
   lots: number;
+  /** Time span of the position drawing it came from (else it starts at the replay point). */
+  fromT?: number;
+  toT?: number;
 }
 
 export interface ChartContextEvent {
@@ -65,6 +77,11 @@ export interface ChartHandle {
   screenshot: () => string | null;
   resetView: () => void;
   bars: () => ChartBar[];
+  /** Show the last `days` of revealed candles. */
+  setVisibleDays: (days: number) => void;
+  setScaleMode: (mode: "normal" | "percent" | "log") => void;
+  setAutoScale: (on: boolean) => void;
+  zoomIn: () => void;
 }
 
 interface Props {
@@ -85,7 +102,24 @@ interface Props {
   sessionShading: boolean;
   /** Keep the newest revealed candle in view while stepping. */
   autoScroll: boolean;
-  onAutoScroll: (v: boolean) => void;
+  /** The price axis's auto-scale changed (e.g. the user zoomed it by hand). */
+  onAutoScaleChange?: (on: boolean) => void;
+  /** Snap drawing points to the candle's open/high/low/close. */
+  magnet: boolean;
+  /** Draw closed trades' entry/stop/target zones (off = TradingView-clean chart). */
+  pastTrades: boolean;
+  /** Text on trade markers ("Buy 0.50", "TP +2.0R"); off = arrows only. */
+  tradeLabels: boolean;
+  /** Drawings can be selected but not moved or reshaped. */
+  lockAll: boolean;
+  /** Drawing temporarily replaced by the order preview (being turned into an order). */
+  hiddenDrawingId?: string | null;
+  /** A Long/Short position drawing was just placed. */
+  onProjectionPlaced?: (id: string) => void;
+  /** TradingView-style SELL / BUY buttons in the legend. */
+  onQuickTrade?: (side: Side) => void;
+  onIndicatorsChange?: (next: IndicatorConfig[]) => void;
+  onOpenIndicators?: () => void;
   selectedDrawingId: string | null;
   onSelectDrawing: (id: string | null) => void;
   handleRef?: Ref<ChartHandle>;
@@ -111,6 +145,7 @@ function cssVar(name: string, fallback: string): string {
 
 function readColors(): OverlayColors & { grid: string; axis: string; background: string; border: string } {
   return {
+    font: typeof document === "undefined" ? "" : getComputedStyle(document.body).fontFamily,
     profit: TV.up,
     loss: TV.down,
     accent: cssVar("--accent", "#5e4ff2"),
@@ -135,7 +170,7 @@ function toCandle(b: ChartBar): CandlestickData<Time> {
   if (b.forming) {
     // The candle still forming at the replay point is drawn translucent so it
     // reads as incomplete, never as a finished bar.
-    const base = b.close >= b.open ? TV.up : TV.down;
+    const base = b.close >= b.open ? CANDLE.up : CANDLE.down;
     c.color = withAlpha(base, 0.35);
     c.wickColor = withAlpha(base, 0.6);
     c.borderColor = base;
@@ -179,6 +214,10 @@ export default function ReplayChart(props: Props) {
   const linesRef = useRef<Map<string, { line: IPriceLine; target: DragTarget; price: number }>>(new Map());
   const indicatorsRef = useRef<IndicatorSeries[]>([]);
   const dragRef = useRef<DragState | null>(null);
+  /** Position tool under the pointer — its labels show on hover, like TradingView. */
+  const hoverRef = useRef<string | null>(null);
+  /** Trade-line row under the pointer — compact pills expand (and ghosts show) on hover. */
+  const pillHoverRef = useRef<string | null>(null);
   const draftRef = useRef<Drawing | null>(null);
   const propsRef = useRef(props);
   const colorsRef = useRef(readColors());
@@ -269,10 +308,26 @@ export default function ReplayChart(props: Props) {
     };
     const stat = (side: Side, entry: number, level: number, lots: number) =>
       levelStats({ side, entry, level, lots, spec, accountCurrency: ccy, conversionRate: set.conversionRate, balance: s.balance });
+    // TradingView position-tool labels: "Target: 0.00250 (0.23%) 25.0 pips, Amount: $250.00".
+    const amount = new Intl.NumberFormat("en-US", { style: "currency", currency: ccy });
+    const levelText = (kind: "Target" | "Stop", side: Side, entry: number, level: number, lots: number) => {
+      const st = stat(side, entry, level, lots);
+      return `${kind}: ${Math.abs(level - entry).toFixed(d)} (${st.pricePct.toFixed(2)}%) ${st.pips.toFixed(1)} pips, Amount: ${amount.format(Math.abs(st.money))}`;
+    };
     const labels = (side: Side, entry: number, sl: number | null, tp: number | null, lots: number) => ({
-      targetLabel: tp !== null ? levelLabel("Target", tp, stat(side, entry, tp, lots), d, ccy) : undefined,
-      stopLabel: sl !== null ? levelLabel("Stop", sl, stat(side, entry, sl, lots), d, ccy) : undefined,
+      targetLabel: tp !== null ? levelText("Target", side, entry, tp, lots) : undefined,
+      stopLabel: sl !== null ? levelText("Stop", side, entry, sl, lots) : undefined,
     });
+    /** Centre label: open P&L at the current price, size and reward:risk. */
+    const centre = (side: Side, entry: number, sl: number | null, tp: number | null, lots: number) => {
+      const exitPx = side === "buy" ? s.quote.bid : s.quote.ask;
+      const open = stat(side, entry, exitPx, lots).money;
+      const ratio = rewardRisk(entry, sl, tp);
+      return {
+        centerLabel: `Open P&L: ${signedMoney(open, ccy)}, Qty: ${lots > 0 ? lots.toFixed(2) : "—"} lots\nRisk/Reward Ratio: ${ratio !== null ? +ratio.toFixed(2) : "—"}`,
+        centerColor: open >= 0 ? TV.up : TV.down,
+      };
+    };
     const rr = (entry: number, sl: number | null, tp: number | null) => {
       const v = rewardRisk(entry, sl, tp);
       return v === null ? "" : ` · R:R ${v.toFixed(2)}`;
@@ -281,14 +336,19 @@ export default function ReplayChart(props: Props) {
 
     const boxes: Box[] = [];
     const pills: PillRow[] = [];
+    // Trade lines stay compact (TradingView-clean); hovering a line shows pips, % and R:R.
+    const hot = (key: string) => pillHoverRef.current === key;
     // Pills for a stop/target level, with ✕ to remove it.
     const levelPill = (owner: "position" | "order", id: string, side: Side, entry: number, field: "sl" | "tp", level: number, lots: number): PillRow => {
       const st = stat(side, entry, level, lots);
+      const key = `${owner}:${id}:${field}`;
+      const tag = field === "sl" ? "SL" : "TP";
       return {
         price: level,
+        key,
         pills: [
           {
-            text: `${field === "sl" ? "SL" : "TP"}  ${st.money >= 0 ? "+" : "−"}${st.pips.toFixed(1)} pips  ${signedMoney(st.money, ccy)}  ${signedPct(st.accountPct)}`,
+            text: hot(key) ? `${tag}  ${st.money >= 0 ? "+" : "−"}${st.pips.toFixed(1)} pips  ${signedMoney(st.money, ccy)}  ${signedPct(st.accountPct)}` : `${tag}  ${signedMoney(st.money, ccy)}`,
             color: field === "sl" ? TV.stop : TV.up,
             close: { type: "remove-level", owner, id, field },
           },
@@ -302,8 +362,10 @@ export default function ReplayChart(props: Props) {
       return out;
     };
 
-    for (const t of s.trades.slice(-60)) {
-      boxes.push({ id: t.id, kind: "closed", side: t.side, fromT: t.entryT, toT: t.exitT, entry: t.entryPrice, sl: t.initialSl, tp: t.initialTp, exitPrice: t.exitPrice });
+    if (p.pastTrades) {
+      for (const t of s.trades.slice(-60)) {
+        boxes.push({ id: t.id, kind: "closed", side: t.side, fromT: t.entryT, toT: t.exitT, entry: t.entryPrice, sl: t.initialSl, tp: t.initialTp, exitPrice: t.exitPrice });
+      }
     }
 
     for (const pos of s.positions) {
@@ -314,12 +376,15 @@ export default function ReplayChart(props: Props) {
       const openPips = ((exitPx - pos.entryPrice) * (pos.side === "buy" ? 1 : -1)) / spec.pipSize;
       // Live trades: zones only — the pills on the right carry pips, money and %.
       boxes.push({ id: pos.id, kind: "open", side: pos.side, fromT: pos.entryT, toT: null, entry: pos.entryPrice, sl, tp });
+      const key = `position:${pos.id}:entry`;
+      const tag = `${pos.side === "buy" ? "LONG" : "SHORT"} ${pos.lots.toFixed(2)}`;
       pills.push({
         price: pos.entryPrice,
+        key,
         pills: [
-          ...ghosts("position", pos.id, sl, tp),
+          ...(hot(key) ? ghosts("position", pos.id, sl, tp) : []),
           {
-            text: `${pos.side === "buy" ? "LONG" : "SHORT"} ${pos.lots.toFixed(2)}  ${openPips >= 0 ? "+" : "−"}${Math.abs(openPips).toFixed(1)} pips  ${signedMoney(pnl, ccy)}  ${signedPct(pct(pnl))}${rr(pos.entryPrice, sl, tp)}`,
+            text: hot(key) ? `${tag}  ${openPips >= 0 ? "+" : "−"}${Math.abs(openPips).toFixed(1)} pips  ${signedMoney(pnl, ccy)}  ${signedPct(pct(pnl))}${rr(pos.entryPrice, sl, tp)}` : `${tag}  ${signedMoney(pnl, ccy)}`,
             color: pos.side === "buy" ? TV.up : TV.down,
             close: { type: "close-position", id: pos.id },
           },
@@ -335,9 +400,15 @@ export default function ReplayChart(props: Props) {
       const tp = override({ kind: "order", id: o.id, field: "tp" }, o.tp);
       const side: Side = o.type.startsWith("buy") ? "buy" : "sell";
       boxes.push({ id: o.id, kind: "pending", side, fromT: o.createdAt, toT: null, entry: price, sl, tp });
+      const key = `order:${o.id}:entry`;
+      const tag = `${labelOf(o.type).toUpperCase()} ${o.lots.toFixed(2)}`;
       pills.push({
         price,
-        pills: [...ghosts("order", o.id, sl, tp), { text: `${labelOf(o.type).toUpperCase()} ${o.lots.toFixed(2)} @ ${price.toFixed(d)}${rr(price, sl, tp)}`, color: TV.order, close: { type: "cancel-order", id: o.id } }],
+        key,
+        pills: [
+          ...(hot(key) ? ghosts("order", o.id, sl, tp) : []),
+          { text: hot(key) ? `${tag} @ ${price.toFixed(d)}${rr(price, sl, tp)}` : tag, color: TV.order, close: { type: "cancel-order", id: o.id } },
+        ],
       });
       if (sl !== null) pills.push(levelPill("order", o.id, side, price, "sl", sl, o.lots));
       if (tp !== null) pills.push(levelPill("order", o.id, side, price, "tp", tp, o.lots));
@@ -352,19 +423,19 @@ export default function ReplayChart(props: Props) {
         id: "preview",
         kind: "preview",
         side: pv.side,
-        fromT: s.cursorT,
-        toT: null,
+        fromT: pv.fromT ?? s.cursorT,
+        toT: pv.toT ?? null,
         entry,
         sl,
         tp,
         ...labels(pv.side, entry, sl, tp, pv.lots),
-        centerLabel: `${pv.side === "buy" ? "Long" : "Short"} (ticket) · Qty: ${pv.lots > 0 ? pv.lots.toFixed(2) : "—"}${rr(entry, sl, tp)}`,
-        centerColor: TV.neutral,
+        ...centre(pv.side, entry, sl, tp, pv.lots),
       });
     }
 
     const drawings: Drawing[] = [];
     for (const raw of s.session.drawings) {
+      if (raw.id === p.hiddenDrawingId) continue;
       const dr = drag?.proj && drag.proj.id === raw.id ? drag.proj : raw;
       if (p.hideDrawings && isProjection(dr)) continue;
       drawings.push(dr);
@@ -373,7 +444,7 @@ export default function ReplayChart(props: Props) {
       const lots = computeSizing({
         mode: set.riskMode,
         side: lv.side,
-        equity: s.equity,
+        equity: riskBase(s),
         riskPercent: set.riskPercent,
         riskMoney: set.riskMoney,
         fixedLots: set.fixedLots,
@@ -384,6 +455,9 @@ export default function ReplayChart(props: Props) {
         accountCurrency: ccy,
         conversionRate: set.conversionRate,
       }).lots;
+      const selected = dr.id === p.selectedDrawingId;
+      const hovered = dr.id === hoverRef.current || drag?.proj?.id === dr.id;
+      // TradingView-clean: zones only, until the tool is hovered or selected.
       boxes.push({
         id: dr.id,
         kind: "projection",
@@ -393,11 +467,31 @@ export default function ReplayChart(props: Props) {
         entry: lv.entry,
         sl: lv.sl,
         tp: lv.tp,
-        ...labels(lv.side, lv.entry, lv.sl, lv.tp, lots),
-        centerLabel: `${lv.side === "buy" ? "Long" : "Short"} position · Qty: ${lots > 0 ? lots.toFixed(2) : "—"}${rr(lv.entry, lv.sl, lv.tp)}`,
-        centerColor: TV.neutral,
-        selected: dr.id === p.selectedDrawingId,
+        ...(selected || hovered ? { ...labels(lv.side, lv.entry, lv.sl, lv.tp, lots), ...centre(lv.side, lv.entry, lv.sl, lv.tp, lots) } : {}),
+        selected,
+        hovered,
       });
+    }
+
+    // Price/time-scale labels: horizontal lines always, the selected drawing's points and span.
+    const tz = s.session.displayTimezone;
+    const stamp = (t: number) => `${formatInTz(t, tz, "tick-day")} '${formatInTz(t, tz, "month").slice(-2)}  ${formatInTz(t, tz, "time")}`;
+    const axisLabels: AxisLabel[] = [];
+    let timeSpan: { from: TimeMark; to: TimeMark | null } | null = null;
+    if (!p.hideDrawings) {
+      for (const dr of drawings) if (dr.kind === "hline") axisLabels.push({ price: dr.points[0].p, text: dr.points[0].p.toFixed(d), color: dr.color });
+      const sel = drawings.find((q) => q.id === p.selectedDrawingId);
+      if (sel && isProjection(sel)) {
+        const lv = projectionLevels(sel);
+        axisLabels.push({ price: lv.tp, text: lv.tp.toFixed(d), color: TV.up }, { price: lv.entry, text: lv.entry.toFixed(d), color: TV.neutral }, { price: lv.sl, text: lv.sl.toFixed(d), color: TV.down });
+        timeSpan = { from: { t: lv.fromT, text: stamp(lv.fromT) }, to: { t: lv.toT, text: stamp(lv.toT) } };
+      } else if (sel) {
+        if (sel.kind !== "hline" && sel.kind !== "vline" && sel.kind !== "daterange") for (const q of sel.points) axisLabels.push({ price: q.p, text: q.p.toFixed(d), color: sel.color });
+        if (sel.kind !== "hline" && sel.kind !== "ray") {
+          const [a, b] = sel.points;
+          timeSpan = { from: { t: a.t, text: stamp(a.t) }, to: b && sel.kind !== "vline" && sel.kind !== "text" ? { t: b.t, text: stamp(b.t) } : null };
+        }
+      }
     }
 
     const bars = barsRef.current;
@@ -436,11 +530,36 @@ export default function ReplayChart(props: Props) {
       pipSize: spec.pipSize,
       digits: d,
       edgeT: bars.length ? bars[bars.length - 1].time : null,
+      axisLabels,
+      timeSpan,
       colors: colorsRef.current,
       timeToX,
       barSpacing: () => chartRef.current?.timeScale().options().barSpacing ?? 6,
     });
   }, [timeToX, timeToLogical]);
+
+  /** Indicator values in the legend: at the hovered candle, else the latest one. */
+  const legendBoxRef = useRef<HTMLDivElement>(null);
+  const writeIndicatorValues = useCallback((at: ((ser: ISeriesApi<"Line" | "Histogram">) => number | undefined) | null) => {
+    const root = legendBoxRef.current;
+    if (!root) return;
+    const n = barsRef.current.length;
+    for (const { cfg, series } of indicatorsRef.current) {
+      const el = root.querySelector<HTMLElement>(`[data-ind="${cfg.id}"]`);
+      if (!el) continue;
+      const order = cfg.type === "bb" ? [1, 0, 2] : cfg.type === "macd" ? [1, 2, 0] : [0];
+      const dp = cfg.type === "rsi" ? 2 : cfg.type === "macd" ? digits + 1 : digits;
+      el.textContent = order
+        .map((k) => {
+          const ser = series[k];
+          if (!ser) return null;
+          const v = at ? at(ser) : n ? (ser.dataByIndex(n - 1) as { value?: number } | null)?.value : undefined;
+          return v !== undefined && Number.isFinite(v) ? v.toFixed(dp) : null;
+        })
+        .filter(Boolean)
+        .join("  ");
+    }
+  }, [digits]);
 
   // -------------------------------------------------------------------------
   // Chart lifecycle
@@ -456,7 +575,7 @@ export default function ReplayChart(props: Props) {
       layout: {
         background: { type: ColorType.Solid, color: colors.background },
         textColor: colors.muted,
-        fontFamily: "var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif",
+        fontFamily: colors.font || "ui-sans-serif, system-ui, sans-serif",
         fontSize: 11,
         attributionLogo: true,
         panes: { separatorColor: colors.border, separatorHoverColor: colors.axis },
@@ -477,17 +596,20 @@ export default function ReplayChart(props: Props) {
           return formatInTz(t, tz, "time");
         },
       },
-      crosshair: { mode: CrosshairMode.Normal },
+      crosshair: {
+        mode: CrosshairMode.Normal,
+        vertLine: { color: colors.muted, style: LineStyle.Dashed, labelBackgroundColor: colors.accent },
+        horzLine: { color: colors.muted, style: LineStyle.Dashed, labelBackgroundColor: colors.accent },
+      },
       localization: {
         timeFormatter: (time: Time) => formatInTz(time as number, tzRef.current, "datetime"),
       },
     });
-    // TradingView candle colours, as used by FX Replay.
     const series = chart.addSeries(CandlestickSeries, {
-      upColor: TV.up,
-      downColor: TV.down,
-      wickUpColor: TV.up,
-      wickDownColor: TV.down,
+      upColor: CANDLE.up,
+      downColor: CANDLE.down,
+      wickUpColor: CANDLE.up,
+      wickDownColor: CANDLE.down,
       borderVisible: false,
       priceFormat: { type: "price", precision: digits, minMove: 1 / 10 ** digits },
     });
@@ -501,11 +623,21 @@ export default function ReplayChart(props: Props) {
     barsRef.current = [];
     const lines = linesRef.current;
 
+    /** Magnet: snap to the nearest open/high/low/close of the candle at `t`. */
+    const snap = (t: number, price: number) => {
+      if (!propsRef.current.magnet) return price;
+      const bars = barsRef.current;
+      const i = barIndexAt(bars, t);
+      if (i < 0) return price;
+      const b = bars[i];
+      return [b.open, b.high, b.low, b.close].reduce((best, v) => (Math.abs(v - price) < Math.abs(best - price) ? v : best), b.close);
+    };
+
     const legendHtml = (bar: { open: number; high: number; low: number; close: number }, forming = false) => {
       const f = (x: number) => x.toFixed(digits);
       const up = bar.close >= bar.open;
       const chg = bar.open ? ((bar.close - bar.open) / bar.open) * 100 : 0;
-      const cls = up ? "text-[#089981]" : "text-[#f23645]";
+      const cls = up ? "text-[#26c17a]" : "text-[#ef4f4f]";
       return `<span class="text-faint">O</span><span class="${cls}">${f(bar.open)}</span> <span class="text-faint">H</span><span class="${cls}">${f(bar.high)}</span> <span class="text-faint">L</span><span class="${cls}">${f(bar.low)}</span> <span class="text-faint">C</span><span class="${cls}">${f(bar.close)}</span> <span class="${cls}">${bar.close - bar.open >= 0 ? "+" : "−"}${Math.abs(bar.close - bar.open).toFixed(digits)} (${chg >= 0 ? "+" : "−"}${Math.abs(chg).toFixed(2)}%)</span>${forming ? ' <span class="ml-1 rounded bg-warning-soft px-1 text-[10px] font-semibold text-warning">FORMING</span>' : ""}`;
     };
 
@@ -518,12 +650,13 @@ export default function ReplayChart(props: Props) {
         if (d) legend.innerHTML = legendHtml(d);
         else if (last) legend.innerHTML = legendHtml(last, last.forming);
       }
+      writeIndicatorValues(param.time !== undefined ? (ser) => (param.seriesData.get(ser) as { value?: number } | undefined)?.value : null);
       const draft = draftRef.current;
       if (draft && param.point && param.logical !== undefined) {
         const t = logicalToTime(param.logical);
         const price = series.coordinateToPrice(param.point.y);
         if (t !== null && price !== null) {
-          draftRef.current = { ...draft, points: [draft.points[0], { t, p: roundPrice(price) }] };
+          draftRef.current = { ...draft, points: [draft.points[0], { t, p: snap(t, roundPrice(price)) }] };
           renderOverlay();
         }
       }
@@ -546,15 +679,17 @@ export default function ReplayChart(props: Props) {
         if (t === null) return;
         const id = `d_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
         const drawings = p.snap.session.drawings;
+        const sp = snap(t, rp);
         if (p.tool === "long" || p.tool === "short") {
-          const proj = newProjection(p.tool, t, rp, p.snap.spec, barsRef.current, TF_SECONDS[tfRef.current]);
+          const proj = newProjection(p.tool, t, sp, p.snap.spec, barsRef.current, TF_SECONDS[tfRef.current]);
           p.onDrawingsChange([...drawings, proj]);
           p.onToolDone();
           p.onSelectDrawing(proj.id);
+          p.onProjectionPlaced?.(proj.id);
           return;
         }
         if (ONE_POINT.includes(p.tool)) {
-          const d: Drawing = { id, kind: p.tool as Drawing["kind"], points: [{ t, p: rp }], color: p.drawColor, width: 1, style: "solid", ...(p.tool === "text" ? { text: "Text", width: 2 as const } : {}) };
+          const d: Drawing = { id, kind: p.tool as Drawing["kind"], points: [{ t, p: sp }], color: p.drawColor, width: 1, style: "solid", ...(p.tool === "text" ? { text: "Text", width: 2 as const } : {}) };
           p.onDrawingsChange([...drawings, d]);
           p.onToolDone();
           p.onSelectDrawing(id);
@@ -563,9 +698,9 @@ export default function ReplayChart(props: Props) {
         if (TWO_POINT.includes(p.tool as Drawing["kind"])) {
           const draft = draftRef.current;
           if (!draft) {
-            draftRef.current = { id, kind: p.tool as Drawing["kind"], points: [{ t, p: rp }, { t, p: rp }], color: p.drawColor, width: 1, style: "solid" };
+            draftRef.current = { id, kind: p.tool as Drawing["kind"], points: [{ t, p: sp }, { t, p: sp }], color: p.drawColor, width: 1, style: "solid" };
           } else {
-            const done: Drawing = { ...draft, points: [draft.points[0], { t, p: rp }] };
+            const done: Drawing = { ...draft, points: [draft.points[0], { t, p: sp }] };
             draftRef.current = null;
             p.onDrawingsChange([...drawings, done]);
             p.onToolDone();
@@ -587,9 +722,10 @@ export default function ReplayChart(props: Props) {
       if (p.hideDrawings) return null;
       const pr = projector();
       if (!pr) return null;
-      const generic = hitDrawing(p.snap.session.drawings, x, y, pr);
+      const visible = p.hiddenDrawingId ? p.snap.session.drawings.filter((q) => q.id !== p.hiddenDrawingId) : p.snap.session.drawings;
+      const generic = hitDrawing(visible, x, y, pr);
       if (generic) return generic;
-      for (const d of [...p.snap.session.drawings].reverse()) {
+      for (const d of [...visible].reverse()) {
         if (!isProjection(d)) continue;
         const lv = projectionLevels(d);
         const x1 = timeToX(lv.fromT);
@@ -602,12 +738,54 @@ export default function ReplayChart(props: Props) {
       return null;
     };
 
+    /** Trade-line row (right-aligned pills) near a pane point. */
+    const pillRowAt = (x: number, y: number): string | null => {
+      const rows = overlayRef.current?.state?.pills ?? [];
+      const paneW = el.clientWidth - chart.priceScale("right").width();
+      if (x < paneW - 560) return null;
+      let best: { key: string; d: number } | null = null;
+      for (const r of rows) {
+        if (!r.key) continue;
+        const ry = series.priceToCoordinate(r.price);
+        if (ry === null) continue;
+        const d = Math.abs(ry - y);
+        if (d <= 11 && (!best || d < best.d)) best = { key: r.key, d };
+      }
+      return best?.key ?? null;
+    };
+
+    /** Position tool (long/short drawing) whose box contains a pane point. */
+    const projectionAt = (x: number, y: number): string | null => {
+      const p = propsRef.current;
+      if (p.hideDrawings) return null;
+      for (const d of [...p.snap.session.drawings].reverse()) {
+        if (!isProjection(d) || d.id === p.hiddenDrawingId) continue;
+        const lv = projectionLevels(d);
+        const x1 = timeToX(lv.fromT);
+        const x2 = timeToX(lv.toT);
+        const ys = [lv.entry, lv.sl, lv.tp].map((q) => series.priceToCoordinate(q));
+        if (x1 === null || x2 === null || ys.some((q) => q === null)) continue;
+        const yy = ys as number[];
+        if (x >= Math.min(x1, x2) && x <= Math.max(x1, x2) && y >= Math.min(...yy) && y <= Math.max(...yy)) return d.id;
+      }
+      return null;
+    };
+
     chart.subscribeCrosshairMove(onCrosshair);
     let downAt: { x: number; y: number } | null = null;
+    /** Drawing-tool press point (for press-drag-release), the click it replaces, and the last pointer position. */
+    let toolPress: { x: number; y: number } | null = null;
+    let skipClick = false;
+    let lastLocal: { x: number; y: number } | null = null;
     const onDomDown = (e: MouseEvent) => {
       downAt = e.button === 0 ? { x: e.clientX, y: e.clientY } : null;
+      skipClick = false;
     };
     const onDomClick = (e: MouseEvent) => {
+      if (skipClick) {
+        skipClick = false; // already handled on press (drawing tools)
+        return;
+      }
       if (!downAt || Math.abs(e.clientX - downAt.x) + Math.abs(e.clientY - downAt.y) > 5) return; // ended a pan/drag
       const r = el.getBoundingClientRect();
       const x = e.clientX - r.left;
@@ -626,6 +804,31 @@ export default function ReplayChart(props: Props) {
       setEdgeVisible(!r || !n || (r.from <= n - 1 && r.to >= n - 1));
     };
     chart.timeScale().subscribeVisibleLogicalRangeChange(onRange);
+    // Read-only view state for end-to-end checks (visible range, price range, auto-scale).
+    (el as HTMLDivElement & { __replayView?: () => unknown }).__replayView = () => {
+      const r = chart.timeScale().getVisibleLogicalRange();
+      return {
+        from: r?.from ?? null,
+        to: r?.to ?? null,
+        bars: barsRef.current.length,
+        scrollPosition: chart.timeScale().scrollPosition(),
+        top: series.coordinateToPrice(0),
+        bottom: series.coordinateToPrice(Math.max(0, chart.panes()[0]?.getHeight() ?? el.clientHeight) - 1),
+        autoScale: chart.priceScale("right").options().autoScale,
+        markers: markersRef.current?.markers().length ?? 0,
+      };
+    };
+    // Coordinate helpers for end-to-end checks of drawing placement.
+    (el as HTMLDivElement & { __replayCoords?: unknown }).__replayCoords = {
+      x: (t: number) => timeToX(t),
+      y: (p: number) => series.priceToCoordinate(p),
+      logical: (t: number) => timeToLogical(t),
+      /** The candle time a time snaps to (equal to `t` when `t` is a candle). */
+      snap: (t: number) => {
+        const l = timeToLogical(t);
+        return l === null ? null : logicalToTime(l);
+      },
+    };
 
     // ---------------------------------------------------------------------
     // Pointer handling in the capture phase so the chart doesn't pan while
@@ -654,15 +857,29 @@ export default function ReplayChart(props: Props) {
       return price === null || t === null ? null : { t, p: price };
     };
 
+    let autoScaleBeforeDrag = true;
     const beginDrag = (state: DragState) => {
       dragRef.current = state;
       chart.applyOptions({ handleScroll: false, handleScale: false });
       // Freeze the price scale so it doesn't rescale under the cursor.
+      autoScaleBeforeDrag = chart.priceScale("right").options().autoScale;
       chart.priceScale("right").applyOptions({ autoScale: false });
     };
 
     /** Returns true when the press was consumed (button or drag start). */
     const press = (clientX: number, clientY: number): boolean => {
+      const pp = propsRef.current;
+      if (!pp.pick && !isIdleTool(pp.tool)) {
+        // Drawing tools (TradingView): a press draws — it never pans the chart.
+        // Two-point tools take click-click or press-drag-release.
+        const { x, y } = local(clientX, clientY);
+        if (!inPane(x)) return false;
+        toolPress = { x, y };
+        skipClick = true;
+        const logical = chart.timeScale().coordinateToLogical(x);
+        onClick({ point: { x, y }, logical: logical ?? undefined });
+        return true;
+      }
       if (!idle()) return false;
       const { x, y } = local(clientX, clientY);
       if (!inPane(x)) return false;
@@ -677,6 +894,7 @@ export default function ReplayChart(props: Props) {
           const d = propsRef.current.snap.session.drawings.find((q) => q.id === target.id);
           if (!d) return false;
           propsRef.current.onSelectDrawing(d.id);
+          if (d.locked || propsRef.current.lockAll) return true;
           const lv = projectionLevels(d);
           const start = target.field === "tp" ? lv.tp : target.field === "sl" ? lv.sl : lv.entry;
           beginDrag({ key: `proj:${d.id}`, target, price: start, orig: d, proj: d });
@@ -702,7 +920,7 @@ export default function ReplayChart(props: Props) {
       const d = propsRef.current.snap.session.drawings.find((q) => q.id === dh.id);
       if (!d || isProjection(d)) return false;
       propsRef.current.onSelectDrawing(d.id);
-      if (d.locked) return true;
+      if (d.locked || propsRef.current.lockAll) return true;
       const at = marketAt(x, y);
       if (!at) return true;
       beginDrag({ key: `draw:${d.id}`, target: { kind: "drawing", id: d.id, field: dh.part }, price: at.p, orig: d, proj: d, part: dh.part, from: at });
@@ -719,7 +937,20 @@ export default function ReplayChart(props: Props) {
       const rp = roundPrice(price);
       if (drag.target.kind === "drawing" && drag.orig && drag.part && drag.from) {
         const at = marketAt(x, y);
-        if (at) drag.proj = dragDrawing(drag.orig, drag.part, drag.from, at, roundPrice);
+        if (at) {
+          // Move by whole candles so the drawing keeps its shape across gaps (weekends).
+          const lf = timeToLogical(drag.from.t);
+          const lt = timeToLogical(at.t);
+          const bars = lf !== null && lt !== null ? Math.round(lt - lf) : null;
+          const shiftT =
+            bars === null
+              ? undefined
+              : (t: number) => {
+                  const lq = timeToLogical(t);
+                  return lq === null ? t : (logicalToTime(lq + bars) ?? t);
+                };
+          drag.proj = dragDrawing(drag.orig, drag.part, drag.from, at, roundPrice, shiftT);
+        }
       } else if (drag.target.kind === "projection" && drag.orig) {
         const lv = projectionLevels(drag.orig);
         const f = drag.target.field;
@@ -742,11 +973,19 @@ export default function ReplayChart(props: Props) {
     };
 
     const release = () => {
+      const tp = toolPress;
+      toolPress = null;
+      if (tp && draftRef.current && lastLocal && Math.hypot(lastLocal.x - tp.x, lastLocal.y - tp.y) > 6) {
+        // Press-drag-release: the release point is the second anchor.
+        const logical = chart.timeScale().coordinateToLogical(lastLocal.x);
+        onClick({ point: lastLocal, logical: logical ?? undefined });
+      }
       const drag = dragRef.current;
       if (!drag) return;
       dragRef.current = null;
       chart.applyOptions({ handleScroll: true, handleScale: true });
-      chart.priceScale("right").applyOptions({ autoScale: true });
+      // Back to how the user had it (a manually zoomed price axis stays zoomed).
+      chart.priceScale("right").applyOptions({ autoScale: autoScaleBeforeDrag });
       if (drag.target.kind === "projection" || drag.target.kind === "drawing") {
         if (drag.proj && drag.orig && drag.proj !== drag.orig) {
           const next = drag.proj;
@@ -775,6 +1014,7 @@ export default function ReplayChart(props: Props) {
       }
     };
     const onMouseMove = (e: MouseEvent) => {
+      lastLocal = local(e.clientX, e.clientY);
       if (dragRef.current) {
         move(e.clientX, e.clientY);
         return;
@@ -783,6 +1023,13 @@ export default function ReplayChart(props: Props) {
         const p = propsRef.current;
         const { x, y } = local(e.clientX, e.clientY);
         let cursor = p.pick || !isIdleTool(p.tool) || p.tool === "crosshair" ? "crosshair" : "";
+        const hovered = idle() && inPane(x) ? projectionAt(x, y) : null;
+        const row = idle() && inPane(x) ? pillRowAt(x, y) : null;
+        if (hovered !== hoverRef.current || row !== pillHoverRef.current) {
+          hoverRef.current = hovered;
+          pillHoverRef.current = row;
+          renderOverlay();
+        }
         if (idle() && inPane(x)) {
           const region = overlayRef.current?.hit(x, y);
           if (region) cursor = region.cursor;
@@ -796,7 +1043,25 @@ export default function ReplayChart(props: Props) {
         el.style.cursor = cursor;
       }
     };
-    const onMouseUp = () => release();
+    let lastAuto = chart.priceScale("right").options().autoScale;
+    const syncAutoScale = () => {
+      const a = chart.priceScale("right").options().autoScale;
+      if (a !== lastAuto) {
+        lastAuto = a;
+        propsRef.current.onAutoScaleChange?.(a);
+      }
+    };
+    const onMouseUp = () => {
+      release();
+      requestAnimationFrame(syncAutoScale);
+    };
+    const onLeave = () => {
+      if (hoverRef.current || pillHoverRef.current) {
+        hoverRef.current = null;
+        pillHoverRef.current = null;
+        renderOverlay();
+      }
+    };
     const onTouchStart = (e: TouchEvent) => {
       const t = e.touches[0];
       if (t && press(t.clientX, t.clientY)) {
@@ -805,6 +1070,7 @@ export default function ReplayChart(props: Props) {
       }
     };
     const onTouchMove = (e: TouchEvent) => {
+      if (e.touches[0]) lastLocal = local(e.touches[0].clientX, e.touches[0].clientY);
       if (!dragRef.current) return;
       e.preventDefault();
       move(e.touches[0].clientX, e.touches[0].clientY);
@@ -821,6 +1087,7 @@ export default function ReplayChart(props: Props) {
       propsRef.current.onContextMenu({ clientX: e.clientX, clientY: e.clientY, price: roundPrice(price), t, drawingId: dh?.id });
     };
     el.addEventListener("mousedown", onMouseDown, true);
+    el.addEventListener("mouseleave", onLeave);
     el.addEventListener("contextmenu", onContext);
     window.addEventListener("mousemove", onMouseMove);
     window.addEventListener("mouseup", onMouseUp);
@@ -830,6 +1097,7 @@ export default function ReplayChart(props: Props) {
 
     return () => {
       el.removeEventListener("mousedown", onMouseDown, true);
+      el.removeEventListener("mouseleave", onLeave);
       el.removeEventListener("contextmenu", onContext);
       window.removeEventListener("mousemove", onMouseMove);
       window.removeEventListener("mouseup", onMouseUp);
@@ -851,14 +1119,22 @@ export default function ReplayChart(props: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [controller, digits]);
 
+  // With auto-scroll off the view never moves on its own.
+  useEffect(() => {
+    chartRef.current?.timeScale().applyOptions({ shiftVisibleRangeOnNewBar: props.autoScroll });
+  }, [props.autoScroll]);
+
   // Crosshair tool snaps to candle OHLC (magnet); others move freely.
   useEffect(() => {
-    chartRef.current?.applyOptions({ crosshair: { mode: props.tool === "crosshair" ? CrosshairMode.MagnetOHLC : CrosshairMode.Normal } });
-  }, [props.tool]);
+    chartRef.current?.applyOptions({ crosshair: { mode: props.tool === "crosshair" || props.magnet ? CrosshairMode.MagnetOHLC : CrosshairMode.Normal } });
+  }, [props.tool, props.magnet]);
 
   useEffect(() => {
     renderOverlay();
-  }, [props.hideDrawings, props.sessionShading, renderOverlay]);
+  }, [props.hideDrawings, props.sessionShading, props.pastTrades, renderOverlay]);
+  useEffect(() => {
+    updateMarkers();
+  }, [props.tradeLabels, props.pastTrades]);
 
   // Theme changes: re-read tokens and restyle without recreating the chart.
   useEffect(() => {
@@ -867,7 +1143,8 @@ export default function ReplayChart(props: Props) {
     const colors = readColors();
     colorsRef.current = colors;
     chart.applyOptions({
-      layout: { background: { type: ColorType.Solid, color: colors.background }, textColor: colors.muted, panes: { separatorColor: colors.border } },
+      layout: { background: { type: ColorType.Solid, color: colors.background }, textColor: colors.muted, fontFamily: colors.font || undefined, panes: { separatorColor: colors.border } },
+      crosshair: { vertLine: { color: colors.muted, labelBackgroundColor: colors.accent }, horzLine: { color: colors.muted, labelBackgroundColor: colors.accent } },
       grid: { vertLines: { color: colors.grid }, horzLines: { color: colors.grid } },
       rightPriceScale: { borderColor: colors.border },
       timeScale: { borderColor: colors.border },
@@ -925,9 +1202,18 @@ export default function ReplayChart(props: Props) {
       return i >= 0 ? (bars[i].time as UTCTimestamp) : null;
     };
     const markers: SeriesMarker<Time>[] = [];
-    const entry = (t: number, side: Side, text: string, id: string) => {
+    // TradingView-clean by default: a trade that hit its TP/SL (or was closed)
+    // leaves nothing on the chart. "Past trades on chart" brings back its zones
+    // and entry/exit markers; open positions are marked by their entry line.
+    if (!propsRef.current.pastTrades) {
+      plugin.setMarkers([]);
+      return;
+    }
+    const labelsOn = propsRef.current.tradeLabels;
+    const entry = (t: number, side: Side, label: string, id: string) => {
       const time = at(t);
       if (time === null) return;
+      const text = labelsOn ? label : "";
       markers.push(
         side === "buy"
           ? { time, position: "belowBar", shape: "arrowUp", color: TV.up, text, id }
@@ -944,12 +1230,11 @@ export default function ReplayChart(props: Props) {
           position: t.side === "buy" ? "aboveBar" : "belowBar",
           shape: "circle",
           color: t.netPnl >= 0 ? TV.up : TV.down,
-          text: `${t.exitReason.toUpperCase()} ${r}`,
+          text: labelsOn ? `${t.exitReason.toUpperCase()} ${r}` : "",
           id: `${t.id}-out`,
         });
       }
     }
-    for (const p of s.positions) entry(p.entryT, p.side, `${p.side === "buy" ? "Buy" : "Sell"} ${p.initialLots}`, `${p.id}-in`);
     markers.sort((a, b) => (a.time as number) - (b.time as number));
     plugin.setMarkers(markers);
   }
@@ -963,39 +1248,72 @@ export default function ReplayChart(props: Props) {
     const series = seriesRef.current;
     const chart = chartRef.current;
     if (!series || !chart) return;
+    const prevTf = tfRef.current;
     tfRef.current = tf;
     const { bars, reset } = controller.chartBars();
     const prev = barsRef.current;
+    const ts = chart.timeScale();
+    // Where the user is looking, so updates never yank the view (TradingView-style).
+    const range0 = ts.getVisibleLogicalRange();
+    const atEdge = !range0 || !prev.length || range0.to >= prev.length - 1.5;
+    /** Same zoom, same gap between the newest candle and the right edge. */
+    const keepEdge = (n: number) => {
+      if (!range0 || !prev.length) return;
+      const gap = Math.max(-1, range0.to - (prev.length - 1));
+      const to = n - 1 + gap;
+      ts.setVisibleLogicalRange({ from: to - (range0.to - range0.from), to });
+    };
     let full = reset || epochRef.current !== snap.chartEpoch || prev.length === 0 || bars.length < prev.length;
     // Only the previous last candle (possibly still forming) and new ones change.
     const changedFrom = Math.max(0, prev.length - 1);
     if (!full) {
       try {
         for (let k = changedFrom; k < bars.length; k++) series.update(toCandle(bars[k]));
-        if (propsRef.current.autoScroll && bars.length > prev.length) {
-          const r = chart.timeScale().getVisibleLogicalRange();
-          if (r && r.to < bars.length - 1) chart.timeScale().scrollToRealTime();
-        }
         barsRef.current = bars;
+        // Follow new candles only when the newest one was on screen; studying
+        // history while stepping leaves the view where it is.
+        if (propsRef.current.autoScroll && atEdge && bars.length > prev.length) keepEdge(bars.length);
       } catch {
         full = true; // out-of-order update — fall back to a full redraw
       }
     }
     if (full) {
+      // Time at the centre of the view, from the bars being replaced.
+      let centreT: number | null = null;
+      if (range0 && prev.length && !atEdge) {
+        const c = Math.round((range0.from + range0.to) / 2);
+        const tfSec = TF_SECONDS[prevTf];
+        centreT = c < 0 ? prev[0].time + c * tfSec : c >= prev.length ? prev[prev.length - 1].time + (c - prev.length + 1) * tfSec : prev[c].time;
+      }
       series.setData(bars.map(toCandle));
       barsRef.current = bars;
-      if (epochRef.current === -1 || prev.length === 0 || reset) {
-        const n = bars.length;
-        chart.timeScale().setVisibleLogicalRange({ from: Math.max(-5, n - 140), to: n + 16 });
+      const n = bars.length;
+      if (epochRef.current === -1 || prev.length === 0 || !range0) {
+        ts.setVisibleLogicalRange({ from: Math.max(-5, n - 140), to: n + 16 });
+      } else if (centreT === null) {
+        // Was at the latest candle (step back, timeframe switch): same zoom, same gap to the right edge.
+        keepEdge(n);
+      } else {
+        // Was studying history: keep the same moment in the middle at the same zoom.
+        const c = timeToLogical(centreT);
+        const half = (range0.to - range0.from) / 2;
+        if (c !== null) ts.setVisibleLogicalRange({ from: c - half, to: c + half });
       }
       epochRef.current = snap.chartEpoch;
     }
+    // Re-check "is the newest candle on screen?" after every update: when a redraw
+    // lands on the same visible range the chart sends no range event.
+    requestAnimationFrame(() => {
+      const r = chartRef.current?.timeScale().getVisibleLogicalRange();
+      const n = barsRef.current.length;
+      setEdgeVisible(!r || !n || (r.from <= n - 1 && r.to >= n - 1));
+    });
     const legend = legendRef.current;
     if (legend && legend.dataset.hover !== "1" && bars.length) {
       const b = bars[bars.length - 1];
       const f = (x: number) => x.toFixed(digits);
       const up = b.close >= b.open;
-      const cls = up ? "text-[#089981]" : "text-[#f23645]";
+      const cls = up ? "text-[#26c17a]" : "text-[#ef4f4f]";
       const chg = b.open ? ((b.close - b.open) / b.open) * 100 : 0;
       legend.innerHTML = `<span class="text-faint">O</span><span class="${cls}">${f(b.open)}</span> <span class="text-faint">H</span><span class="${cls}">${f(b.high)}</span> <span class="text-faint">L</span><span class="${cls}">${f(b.low)}</span> <span class="text-faint">C</span><span class="${cls}">${f(b.close)}</span> <span class="${cls}">${b.close - b.open >= 0 ? "+" : "−"}${Math.abs(b.close - b.open).toFixed(digits)} (${chg >= 0 ? "+" : "−"}${Math.abs(chg).toFixed(2)}%)</span>${b.forming ? ' <span class="ml-1 rounded bg-warning-soft px-1 text-[10px] font-semibold text-warning">FORMING</span>' : ""}`;
     }
@@ -1004,6 +1322,7 @@ export default function ReplayChart(props: Props) {
     } catch {
       updateIndicators(true);
     }
+    if (legend?.dataset.hover !== "1") writeIndicatorValues(null);
     updateMarkers();
     renderOverlay();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1013,7 +1332,7 @@ export default function ReplayChart(props: Props) {
   // Indicators (computed from revealed candles only)
   // -------------------------------------------------------------------------
 
-  const indicatorKey = JSON.stringify(snap.session.indicators.filter((i) => i.visible));
+  const indicatorKey = JSON.stringify(snap.session.indicators.filter((i) => i.visible && !i.hidden));
   useEffect(() => {
     const chart = chartRef.current;
     if (!chart) return;
@@ -1026,7 +1345,7 @@ export default function ReplayChart(props: Props) {
         // pane already gone
       }
     }
-    const visible = snap.session.indicators.filter((i) => i.visible);
+    const visible = snap.session.indicators.filter((i) => i.visible && !i.hidden);
     let pane = 1;
     for (const cfg of visible) {
       const series: ISeriesApi<"Line" | "Histogram">[] = [];
@@ -1045,6 +1364,7 @@ export default function ReplayChart(props: Props) {
       if (i > 0) p.setHeight(90);
     });
     updateIndicators(true);
+    requestAnimationFrame(() => writeIndicatorValues(null));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [indicatorKey]);
 
@@ -1112,6 +1432,29 @@ export default function ReplayChart(props: Props) {
         chartRef.current?.priceScale("right").applyOptions({ autoScale: true });
       },
       bars: () => barsRef.current,
+      setVisibleDays: (days: number) => {
+        const chart = chartRef.current;
+        const bars = barsRef.current;
+        if (!chart || !bars.length) return;
+        const n = bars.length;
+        const from = barIndexAt(bars, bars[n - 1].time - days * 86_400);
+        chart.timeScale().setVisibleLogicalRange({ from: Math.max(0, from), to: n + 4 });
+        chart.priceScale("right").applyOptions({ autoScale: true });
+      },
+      setScaleMode: (mode) => {
+        chartRef.current?.priceScale("right").applyOptions({ mode: mode === "percent" ? PriceScaleMode.Percentage : mode === "log" ? PriceScaleMode.Logarithmic : PriceScaleMode.Normal });
+      },
+      setAutoScale: (on) => {
+        chartRef.current?.priceScale("right").applyOptions({ autoScale: on });
+      },
+      zoomIn: () => {
+        const chart = chartRef.current;
+        const r = chart?.timeScale().getVisibleLogicalRange();
+        if (!chart || !r) return;
+        const span = r.to - r.from;
+        const c = (r.from + r.to) / 2;
+        chart.timeScale().setVisibleLogicalRange({ from: c - span * 0.35, to: c + span * 0.35 });
+      },
     }),
     [],
   );
@@ -1119,61 +1462,86 @@ export default function ReplayChart(props: Props) {
   const hint = props.pick
     ? `Click the chart to set the ${props.pick === "sl" ? "stop-loss" : props.pick === "tp" ? "take-profit" : "entry price"} · Esc to cancel`
     : props.tool === "long" || props.tool === "short"
-      ? `Click to place a ${props.tool} position · drag its edges to set stop and target · Esc to cancel`
-      : props.tool === "trend" || props.tool === "rect"
+      ? `Click to place a ${props.tool} position · Esc to cancel`
+      : props.tool === "trend" || props.tool === "rect" || props.tool === "fib" || props.tool === "pricerange" || props.tool === "daterange"
         ? "Click two points · Esc to cancel"
-        : props.tool !== "cursor"
+        : !isIdleTool(props.tool)
           ? "Click to place · Esc to cancel"
           : null;
 
+  const onChart = snap.session.indicators.filter((i) => i.visible);
+  const { quote, spec } = snap;
+
   return (
     <div className="relative h-full w-full">
-      <div className="absolute bottom-9 right-[72px] z-10 flex items-center gap-1" data-testid="chart-controls">
+      <div ref={containerRef} className="absolute inset-0" data-testid="replay-chart" />
+
+      <div ref={legendBoxRef} className="pointer-events-none absolute left-3 top-2 z-10 max-w-[calc(100%-6rem)] space-y-1">
+        <div className="flex flex-wrap items-center gap-x-2 text-[13px] tabular-nums">
+          <span className="font-medium text-foreground/90">
+            {spec.symbol} · {TF_SHORT[tf]} · {snap.dataset.provider ? "FXCM" : snap.dataset.priceBasis === "unknown" ? "Imported" : snap.dataset.priceBasis}
+          </span>
+          <span className="h-2 w-2 rounded-full bg-profit" title="Replay" />
+          <span ref={legendRef} className="flex flex-wrap gap-x-1.5 text-[12.5px]" />
+        </div>
+        {snap.context && !showsContext(tf) && (
+          <p className="text-[11px] text-muted" data-testid="context-note">
+            History before {formatInTz(snap.context.toT, snap.session.displayTimezone, "date")} is on 1h and higher timeframes.
+          </p>
+        )}
+        {onChart.length > 0 && (
+          <ul className="space-y-0.5" data-testid="indicator-legend">
+            {onChart.map((ind) => (
+              <li key={ind.id} className="group pointer-events-auto flex w-fit items-center gap-1.5 rounded-md px-1 py-px text-[12px] tabular-nums hover:bg-card/80">
+                <span className={cn("font-medium", ind.hidden ? "text-faint" : "text-foreground/85")}>{indicatorTitle(ind)}</span>
+                {!ind.hidden && <span data-ind={ind.id} style={{ color: ind.color }} />}
+                <span className="flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
+                  <button type="button" className="rounded p-0.5 text-muted hover:text-foreground" onClick={() => props.onIndicatorsChange?.(snap.session.indicators.map((i) => (i.id === ind.id ? { ...i, hidden: !i.hidden } : i)))} aria-label={ind.hidden ? `Show ${indicatorTitle(ind)}` : `Hide ${indicatorTitle(ind)}`}>
+                    {ind.hidden ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                  </button>
+                  <button type="button" className="rounded p-0.5 text-muted hover:text-foreground" onClick={() => props.onOpenIndicators?.()} aria-label={`Settings for ${indicatorTitle(ind)}`}>
+                    <Settings2 className="h-3.5 w-3.5" />
+                  </button>
+                  <button type="button" className="rounded p-0.5 text-muted hover:text-loss" onClick={() => props.onIndicatorsChange?.(snap.session.indicators.filter((i) => i.id !== ind.id))} aria-label={`Remove ${indicatorTitle(ind)}`}>
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+        {props.onQuickTrade && !snap.atEnd && (
+          <div className="pointer-events-auto flex w-fit items-stretch overflow-hidden rounded-lg border border-border bg-card/90 shadow-sm backdrop-blur" role="group" aria-label="Quick trade">
+            <button type="button" onClick={() => props.onQuickTrade?.("sell")} className="flex flex-col items-start px-2.5 py-1 text-left text-loss transition-colors hover:bg-loss-soft" data-testid="quick-sell" title="Open a sell order">
+              <span className="text-[13px] font-semibold tabular-nums leading-tight">{quote.bid.toFixed(spec.digits)}</span>
+              <span className="text-[9.5px] font-semibold uppercase tracking-wider">Sell</span>
+            </button>
+            <span className="flex items-center border-x border-border px-1.5 text-[10.5px] tabular-nums text-muted" title="Spread in pips">
+              {(quote.spread / spec.pipSize).toFixed(1)}
+            </span>
+            <button type="button" onClick={() => props.onQuickTrade?.("buy")} className="flex flex-col items-end px-2.5 py-1 text-right text-profit transition-colors hover:bg-profit-soft" data-testid="quick-buy" title="Open a buy order">
+              <span className="text-[13px] font-semibold tabular-nums leading-tight">{quote.ask.toFixed(spec.digits)}</span>
+              <span className="text-[9.5px] font-semibold uppercase tracking-wider">Buy</span>
+            </button>
+          </div>
+        )}
+      </div>
+
+      <div className="absolute bottom-9 right-[76px] z-10" data-testid="chart-controls">
         {!edgeVisible && (
           <button
             type="button"
-            className="flex h-7 items-center gap-1 rounded-md border border-border bg-card/95 px-2 text-[11px] font-medium shadow-sm hover:border-accent hover:text-accent"
+            className="flex h-8 w-8 items-center justify-center rounded-full border border-border bg-card/95 text-foreground shadow-md hover:border-accent hover:text-accent"
             onClick={() => chartRef.current?.timeScale().scrollToRealTime()}
             title="Scroll to the replay point (latest revealed candle)"
+            aria-label="Scroll to the replay point"
             data-testid="go-to-replay"
           >
-            <ArrowRightToLine className="h-3.5 w-3.5" /> Replay point
+            <ChevronsRight className="h-4 w-4" />
           </button>
         )}
-        <button
-          type="button"
-          aria-pressed={props.autoScroll}
-          onClick={() => props.onAutoScroll(!props.autoScroll)}
-          className={`flex h-7 w-7 items-center justify-center rounded-md border border-border bg-card/95 shadow-sm ${props.autoScroll ? "text-accent" : "text-muted"} hover:text-foreground`}
-          title={props.autoScroll ? "Auto-scroll on — the newest candle stays in view" : "Auto-scroll off — the view stays where you put it"}
-          aria-label="Auto-scroll"
-        >
-          <MoveHorizontal className="h-3.5 w-3.5" />
-        </button>
-        <button
-          type="button"
-          onClick={() => {
-            const n = barsRef.current.length;
-            chartRef.current?.timeScale().setVisibleLogicalRange({ from: Math.max(-5, n - 140), to: n + 12 });
-            chartRef.current?.priceScale("right").applyOptions({ autoScale: true });
-          }}
-          className="flex h-7 w-7 items-center justify-center rounded-md border border-border bg-card/95 text-muted shadow-sm hover:text-foreground"
-          title="Reset chart view (zoom, scroll and price scale)"
-          aria-label="Reset chart view"
-        >
-          <Maximize2 className="h-3.5 w-3.5" />
-        </button>
       </div>
-      <div ref={containerRef} className="absolute inset-0" data-testid="replay-chart" />
-      <div className="pointer-events-none absolute left-3 top-2 z-10 flex flex-wrap items-center gap-x-1.5 text-[11px] font-medium tabular-nums text-foreground">
-        <span className="font-semibold">{snap.spec.symbol}</span>
-        <span className="text-faint">·</span>
-        <span className="text-muted">{tf}</span>
-        <span className="text-faint">·</span>
-        <span className="text-muted">{snap.dataset.priceBasis === "unknown" ? "price basis unknown" : snap.dataset.priceBasis}</span>
-        <span ref={legendRef} className="ml-1.5 flex flex-wrap gap-x-1" />
-      </div>
-      {hint && <div className="pointer-events-none absolute left-1/2 top-2 z-10 -translate-x-1/2 rounded-full border border-accent/40 bg-card/95 px-3 py-1 text-[11px] font-medium text-foreground shadow-md">{hint}</div>}
+      {hint && <div className="pointer-events-none absolute bottom-3 left-1/2 z-10 -translate-x-1/2 rounded-full border border-accent/40 bg-card/95 px-3 py-1 text-[11.5px] font-medium text-foreground shadow-md">{hint}</div>}
     </div>
   );
 }

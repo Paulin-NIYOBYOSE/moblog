@@ -100,8 +100,21 @@ and a closed tab loses at most the week in flight.
 3. **Check** (`data/validate`). Gaps in the session's range are counted, with
    weekend closures told apart from missing intervals. The result is saved on
    the session (`dataCheck`) and shown on its detail page.
-4. **Load.** The workstation loads only the days between the history start
-   and the session end, in 31-day windows, 4 requests in parallel.
+4. **Load.** The workstation loads base candles from ~3 months before the
+   start to the session end, in 31-day windows, 4 requests in parallel.
+
+**Long history** (`lib/replay/history.ts`):
+
+- **Planning:** history further back than ~3 months is planned as hourly
+  "context".
+  - Automatic sessions download FXCM's hourly files for it (dataset
+    `fxcm_SYMBOL_H1`, 4 files at a time).
+  - Imported datasets get it from `GET …/candles?tf=H1`, which aggregates on
+    the server, up to a year per request.
+- **The seam:** base data starts on a weekly boundary, so no 1h–1W candle
+  mixes the two sources. A test checks that the combined candles equal
+  candles built from 1-minute data alone.
+- **Chart only:** context is never given to the engine.
 
 Nothing is ever synthesised to cover a gap. Imported datasets go through the
 CSV pipeline instead: parse in a worker, show the quality report, then upload
@@ -149,7 +162,7 @@ runs on the same machine:
 
 | Step | Time |
 |---|---|
-| Parse + quality report + upload to the database | 4.7–7.4 s |
+| Parse + quality report + upload to the database | 3.4–7.4 s |
 | Wizard → chart ready (3 months history → year end) | 1.5–2.7 s |
 | 40 consecutive M15 steps | 0.44–1.55 s |
 

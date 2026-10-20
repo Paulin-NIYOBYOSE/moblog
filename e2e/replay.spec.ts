@@ -88,16 +88,17 @@ test("create session → automatic FXCM download → replay → trade → journa
 
   // Replay forward and trade: buy with a 10-pip stop and 20-pip target, sized at 1% risk.
   for (let i = 0; i < 8; i++) await page.getByTestId("replay-next").click();
+  await page.getByTestId("open-order-panel").click();
   await page.getByTestId("side-buy").click();
   await page.getByTestId("ticket-sl").fill("10");
   await page.getByTestId("ticket-tp").fill("20");
-  await expect(page.getByTestId("ticket-lots")).toContainText("lots");
+  await expect(page.getByTestId("ticket-lots")).not.toHaveValue("");
   await page.getByTestId("ticket-submit").click();
   await expect(page.getByTestId("position-row")).toHaveCount(1);
   for (let i = 0; i < 2; i++) await page.getByTestId("replay-next").click();
   // Close manually if the stop/target hasn't been reached yet.
   if ((await page.getByTestId("position-row").count()) > 0) await page.getByTestId("close-position").click();
-  await page.getByRole("tab", { name: /History/ }).click();
+  await page.getByRole("tab", { name: /^Closed/ }).click();
   await expect(page.getByTestId("history-row")).toHaveCount(1);
 
   // Journal a note without leaving the workspace.
@@ -114,7 +115,7 @@ test("create session → automatic FXCM download → replay → trade → journa
   await expect(page.getByTestId("replay-workstation")).toBeVisible({ timeout: 120_000 });
   await expect(page.getByTestId("preparation-screen")).toHaveCount(0); // data already stored
   await expect(page.getByTestId("replay-time")).toHaveText(replayTime);
-  await page.getByRole("tab", { name: /History/ }).click();
+  await page.getByRole("tab", { name: /^Closed/ }).click();
   await expect(page.getByTestId("history-row")).toHaveCount(1);
   await page.getByRole("tab", { name: "Journal", exact: true }).click();
   await expect(page.getByText("E2E note: real FXCM data")).toBeVisible();
@@ -151,13 +152,14 @@ test("imported CSV → database → wizard → replay → TP exit → CSV export
   await sessionFromDataset(page, "2024-01-03", "2024-01-05", "7");
   await expect(page.getByTestId("replay-time")).toContainText("03 Jan 2024");
 
+  await page.getByTestId("open-order-panel").click();
   await page.getByTestId("side-buy").click();
   await page.getByTestId("ticket-sl").fill("10");
   await page.getByTestId("ticket-tp").fill("20");
   await page.getByTestId("ticket-submit").click();
   await expect(page.getByTestId("position-row")).toHaveCount(1);
   await page.getByTestId("replay-play").click();
-  await page.getByRole("tab", { name: /History/ }).click();
+  await page.getByRole("tab", { name: /^Closed/ }).click();
   await expect(page.getByTestId("history-row")).toHaveCount(1, { timeout: 90_000 });
   await expect(page.getByTestId("history-row").first()).toContainText("tp");
 
@@ -206,13 +208,13 @@ test("dragging a position's take-profit line on the chart modifies it; stepping 
   await sessionFromDataset(page, "2024-01-03", "2024-01-04", "7");
   await page.getByTestId("replay-next").click();
   await page.getByTestId("replay-next").click();
+  await page.getByTestId("open-order-panel").click();
   await page.getByTestId("ticket-sl").fill("15");
   await page.getByTestId("ticket-tp").fill("15");
   await page.getByTestId("ticket-submit").click();
   await expect(page.getByTestId("position-row")).toHaveCount(1);
-  // Clear the ticket so only the position's own SL/TP lines are draggable.
-  await page.getByTestId("ticket-sl").fill("");
-  await page.getByTestId("ticket-tp").fill("");
+  // Placing closes the order panel, so only the position's own SL/TP lines are draggable.
+  await expect(page.getByTestId("order-panel")).toHaveCount(0);
   const tpInput = page.getByTestId("position-row").getByLabel("Take-profit");
   const before = Number(await tpInput.inputValue());
 
@@ -277,25 +279,36 @@ test("FX Replay-style chart trading: position tool, trade pills, ghost SL, right
   const top = box.y + 30;
   const bottom = box.y + box.height - 60;
 
-  // 1) Long position tool → Place order (Enter) → pre-filled dialog → market fill.
-  await page.getByRole("button", { name: "Long position" }).click();
+  // 1) Long position tool → "Use this drawing?" → the order panel is filled from it → order.
+  await page.keyboard.press("Alt+KeyL");
   await page.mouse.click(box.x + box.width * 0.55, box.y + box.height * 0.45);
-  await page.keyboard.press("Enter");
-  await expect(page.getByRole("dialog")).toContainText("Place long order");
-  await expect(page.getByRole("dialog")).toContainText("Reward : risk");
-  // The tool sits wherever we clicked, so use the pending order at its entry
-  // (a market buy is correctly refused if the stop ended up above the market).
-  await page.getByRole("tab", { name: /^Buy (stop|limit) @/ }).click();
-  await page.getByTestId("projection-place").click();
-  await page.getByRole("tab", { name: /^Orders/ }).click();
-  await expect(page.getByRole("button", { name: /Cancel/ }).first()).toBeVisible();
-  await page.getByRole("button", { name: /Cancel/ }).first().click();
-  await page.getByRole("tab", { name: /^Positions/ }).click();
+  // A small non-blocking card (no dialog) offers to turn the drawing into an order.
+  await expect(page.getByTestId("use-drawing-prompt")).toContainText("Use this drawing?");
+  await page.getByTestId("use-drawing-order").click();
+  await expect(page.getByTestId("order-panel")).toContainText("Filled from your position drawing");
+  const slFromDrawing = await page.getByTestId("ticket-sl").inputValue();
+  expect(Number(slFromDrawing)).toBeGreaterThan(1); // a price, not pips
+  await expect(page.getByTestId("ticket-tp")).not.toHaveValue("");
+  const kind = await page.getByTestId("ticket-type").inputValue();
+  await page.getByTestId("ticket-submit").click();
+  await expect(page.getByTestId("order-panel")).toHaveCount(0);
+  if (kind === "market") {
+    await expect(page.getByTestId("position-row")).toHaveCount(1);
+    await page.getByTestId("close-position").click();
+  } else {
+    await page.getByRole("tab", { name: /^Pending/ }).click();
+    await expect(page.getByRole("button", { name: /Cancel/ }).first()).toBeVisible();
+    await page.getByRole("button", { name: /Cancel/ }).first().click();
+  }
+  await page.getByRole("tab", { name: /^Open/ }).click();
+  const closedBefore = kind === "market" ? 1 : 0;
 
-  // 2) Market trade without stops → drag the "+ SL" ghost below the entry.
+  // 2) Market trade without stops (fixed size) → drag the "+ SL" ghost below the entry.
+  await page.getByTestId("open-order-panel").click();
+  await page.getByTestId("ticket-type").selectOption("market");
   await page.getByTestId("ticket-sl").fill("");
   await page.getByTestId("ticket-tp").fill("");
-  await page.getByRole("button", { name: "lots", exact: true }).click();
+  await page.getByTestId("ticket-lots").fill("0.1");
   await page.getByTestId("ticket-submit").click();
   await expect(page.getByTestId("position-row")).toHaveCount(1);
   const closeX = paneRight - 17; // ✕ cell of the right-aligned pill
@@ -316,15 +329,15 @@ test("FX Replay-style chart trading: position tool, trade pills, ghost SL, right
   expect(close, "✕ button not found").not.toBeNull();
   await page.mouse.click(close!.x, close!.y);
   await expect(page.getByTestId("position-row")).toHaveCount(0);
-  await page.getByRole("tab", { name: /History/ }).click();
-  await expect(page.getByTestId("history-row")).toHaveCount(1);
+  await page.getByRole("tab", { name: /^Closed/ }).click();
+  await expect(page.getByTestId("history-row")).toHaveCount(closedBefore + 1);
 
   // 4) Right-click → pending order at that price.
   await page.mouse.click(box.x + box.width * 0.4, box.y + 60, { button: "right" });
   const menu = page.getByTestId("chart-context-menu");
   await expect(menu).toBeVisible();
   await menu.getByRole("menuitem", { name: /Sell limit/ }).click();
-  await page.getByRole("tab", { name: /Orders/ }).click();
+  await page.getByRole("tab", { name: /^Pending/ }).click();
   await expect(page.getByText("Sell limit").first()).toBeVisible();
   expect(errors, errors.join("\n")).toEqual([]);
 });
@@ -345,20 +358,21 @@ test("drawing tools: fibonacci, text, line drag, lock, undo/redo, hide — saved
   };
 
   // Fibonacci: two clicks → seven levels; undo removes it, redo restores it.
-  await page.getByRole("button", { name: /^Fibonacci retracement/ }).click();
+  await page.mouse.move(box.x + 30, box.y + 30);
+  await page.keyboard.press("Alt+KeyF");
   let a = at(0.3, 0.7);
   await page.mouse.click(a.x, a.y);
   a = at(0.5, 0.3);
   await page.mouse.click(a.x, a.y);
-  await expect(page.getByTestId("drawing-settings")).toContainText("Fibonacci");
+  await expect(page.getByTestId("drawing-settings")).toContainText("Fib retracement");
   await page.keyboard.press("Escape");
   await page.getByTestId("drawing-undo").click();
   expect((await drawings()).filter((d) => d.kind === "fib")).toHaveLength(0);
   await page.getByTestId("drawing-redo").click();
   expect((await drawings()).filter((d) => d.kind === "fib")).toHaveLength(1);
 
-  // Text note, edited from the floating settings bar.
-  await page.getByRole("button", { name: /^Text note/ }).click();
+  // Text note: its editor opens in the floating settings bar.
+  await page.keyboard.press("Alt+KeyN");
   a = at(0.25, 0.2);
   await page.mouse.click(a.x, a.y);
   await page.getByTestId("drawing-text").fill("Breakout zone");
@@ -401,5 +415,168 @@ test("drawing tools: fibonacci, text, line drag, lock, undo/redo, hide — saved
   await expect(page.getByTestId("replay-save")).toContainText("Saved");
   const s = await (await page.request.get(`/api/replay/sessions/${sessionId}`)).json();
   expect(s.chartPrefs.hideDrawings).toBe(true);
+  expect(errors, errors.join("\n")).toEqual([]);
+});
+
+test("the chart view never jumps: stepping, history, step back, timeframe switch, drawings and the order panel", async ({ page }, info) => {
+  const errors = collectErrors(page);
+  type View = { from: number; to: number; bars: number; scrollPosition: number; top: number; bottom: number; autoScale: boolean };
+  const view = () => page.getByTestId("replay-chart").evaluate((el) => (el as unknown as { __replayView: () => View }).__replayView());
+  const close = (a: number, b: number, eps = 0.01) => expect(Math.abs(a - b)).toBeLessThan(eps);
+  // Synthetic fixture (not market data): eight days of M1 in a gentle wave.
+  const { file } = writeHistdataFixture(info.outputDir, "DAT_ASCII_EURUSD_M1_2024.csv", utc(2024, 1, 1), 8 * 1440, (i) => 1.1 + Math.sin(i / 300) * 0.004 + Math.sin(i / 23) * 0.0004);
+  await login(page);
+  await importDataset(page, file);
+  await sessionFromDataset(page, "2024-01-04", "2024-01-08", "7");
+  const box = (await page.getByTestId("replay-chart").boundingBox())!;
+
+  // At the newest candle: stepping keeps the zoom and the gap to the right edge.
+  const a = await view();
+  for (let i = 0; i < 4; i++) await page.getByTestId("replay-next").click();
+  const b = await view();
+  // The first step may only complete the candle that's still forming.
+  expect(b.bars - a.bars).toBeGreaterThanOrEqual(3);
+  close(b.scrollPosition, a.scrollPosition);
+  close(b.to - b.from, a.to - a.from);
+
+  // Studying history: stepping leaves the view exactly where it is.
+  await page.mouse.move(box.x + box.width * 0.5, box.y + box.height * 0.5);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width * 0.5 + 400, box.y + box.height * 0.5, { steps: 8 });
+  await page.mouse.up();
+  const c = await view();
+  await expect(page.getByTestId("go-to-replay")).toBeVisible();
+  for (let i = 0; i < 3; i++) await page.getByTestId("replay-next").click();
+  const d = await view();
+  close(d.from, c.from);
+  close(d.to, c.to);
+  await page.getByTestId("go-to-replay").click();
+  await expect(page.getByTestId("go-to-replay")).toHaveCount(0);
+  await page.waitForTimeout(1200); // scroll animation
+
+  // Step back and switch timeframes: same zoom, same gap, no drift.
+  const e = await view();
+  await page.mouse.move(box.x + 10, box.y + 10);
+  for (let i = 0; i < 4; i++) await page.keyboard.press("ArrowLeft");
+  const f = await view();
+  expect(f.bars).toBeLessThan(e.bars);
+  close(f.scrollPosition, e.scrollPosition);
+  close(f.to - f.from, e.to - e.from);
+  await page.getByRole("tab", { name: "1h", exact: true }).click();
+  await page.getByRole("tab", { name: "15m", exact: true }).click();
+  const g = await view();
+  close(g.scrollPosition, f.scrollPosition);
+  close(g.to - g.from, f.to - f.from);
+  await expect(page.getByTestId("go-to-replay")).toHaveCount(0);
+
+  // Drawings and the order preview never rescale the price axis.
+  await page.keyboard.press("Alt+KeyL");
+  await page.mouse.click(box.x + box.width * 0.45, box.y + box.height * 0.3);
+  const h = await view();
+  close(h.top, g.top, 1e-9);
+  close(h.bottom, g.bottom, 1e-9);
+  await page.getByTestId("use-drawing-annotation").click();
+  await page.getByTestId("open-order-panel").click();
+  await page.getByTestId("ticket-sl").fill("400");
+  await page.waitForTimeout(200);
+  const k = await view();
+  close(k.top, g.top, 1e-4);
+  close(k.bottom, g.bottom, 1e-4);
+  await expect(page.getByTestId("go-to")).toBeVisible(); // nothing squeezed out of the top bar
+  await page.getByTestId("close-order-panel").click();
+
+  // Zooming the price axis by hand turns "auto" off, and the button says so.
+  const axisX = box.x + box.width - 30; // the order panel is closed, so the chart has its full width again
+  await page.mouse.move(axisX, box.y + box.height * 0.4);
+  await page.mouse.down();
+  await page.mouse.move(axisX, box.y + box.height * 0.4 + 80, { steps: 6 });
+  await page.mouse.up();
+  await expect(page.getByRole("button", { name: "auto", exact: true })).toHaveAttribute("aria-pressed", "false");
+  expect((await view()).autoScale).toBe(false);
+  expect(errors, errors.join("\n")).toEqual([]);
+});
+
+test("TradingView-style drawing: press-drag draws without panning, moves keep their shape across a weekend, zoom leaves drawings put, closed trades leave the chart clean", async ({ page }, info) => {
+  const errors = collectErrors(page);
+  type View = { from: number; to: number; markers: number };
+  type Coords = Record<"x" | "y" | "logical" | "snap", (v: number) => number | null>;
+  type Saved = { kind: string; points: { t: number; p: number }[] };
+  const chart = page.getByTestId("replay-chart");
+  const view = () => chart.evaluate((el) => (el as unknown as { __replayView: () => View }).__replayView());
+  const coord = (fn: keyof Coords, v: number) => chart.evaluate((el, [f, a]) => (el as unknown as { __replayCoords: Coords }).__replayCoords[f as keyof Coords](a as number), [fn, v] as const);
+  // Synthetic fixture (not market data): twelve days of M1, so the history before the start includes a weekend.
+  const { file } = writeHistdataFixture(info.outputDir, "DAT_ASCII_EURUSD_M1_2024.csv", utc(2024, 1, 1), 12 * 1440, (i) => 1.1 + Math.sin(i / 300) * 0.004 + Math.sin(i / 23) * 0.0004);
+  await login(page);
+  await importDataset(page, file);
+  await sessionFromDataset(page, "2024-01-09", "2024-01-11", "7");
+  const sessionId = page.url().split("/").at(-2)!;
+  const saved = async () => {
+    await page.getByTestId("replay-save").click();
+    await expect(page.getByTestId("replay-save")).toContainText("Saved");
+    return (await (await page.request.get(`/api/replay/sessions/${sessionId}`)).json()).drawings as Saved[];
+  };
+  await page.getByRole("button", { name: "5d", exact: true }).click(); // Fri 5 Jan → Tue 9 Jan in view
+  const box = (await chart.boundingBox())!;
+
+  // Press-drag-release with the rectangle tool draws it, and the chart doesn't pan.
+  const t0 = utc(2024, 1, 5, 17); // Friday afternoon; the market closes at 22:00 until Sunday 22:00
+  const t1 = utc(2024, 1, 5, 20);
+  const x0 = box.x + (await coord("x", t0))!;
+  const x1 = box.x + (await coord("x", t1))!;
+  const ya = box.y + box.height * 0.35;
+  const yb = box.y + box.height * 0.6;
+  const before = await view();
+  await page.mouse.move(box.x + 20, box.y + 20);
+  await page.keyboard.press("Alt+KeyR");
+  await page.mouse.move(x0, ya);
+  await page.mouse.down();
+  await page.mouse.move(x1, yb, { steps: 8 });
+  await page.mouse.up();
+  const after = await view();
+  expect(Math.abs(after.from - before.from)).toBeLessThan(0.01);
+  expect(Math.abs(after.to - before.to)).toBeLessThan(0.01);
+  let rect = (await saved()).find((d) => d.kind === "rect")!;
+  expect(rect.points.map((q) => q.t)).toEqual([t0, t1]);
+  const width = (await coord("logical", t1))! - (await coord("logical", t0))!;
+
+  // Drag it 16 candles right, into the weekend: it moves by candles, so it keeps its width and both
+  // corners land on real candles (moving by seconds would put the right edge on Saturday, in the gap).
+  const dx = (await coord("x", utc(2024, 1, 5, 21)))! - (await coord("x", t0))!;
+  const cx = (x0 + x1) / 2;
+  const cy = (ya + yb) / 2;
+  await page.mouse.move(cx, cy);
+  await page.mouse.down();
+  await page.mouse.move(cx + dx, cy, { steps: 10 });
+  await page.mouse.up();
+  rect = (await saved()).find((d) => d.kind === "rect")!;
+  expect(rect.points.map((q) => q.t)).toEqual([utc(2024, 1, 5, 21), utc(2024, 1, 8, 0)]);
+  for (const q of rect.points) expect(await coord("snap", q.t)).toBe(q.t);
+  expect((await coord("logical", rect.points[1].t))! - (await coord("logical", rect.points[0].t))!).toBe(width);
+
+  // Horizontal ray: one click; zooming in and out changes the view but never the drawings.
+  await page.keyboard.press("Escape");
+  await page.mouse.move(box.x + 20, box.y + 20);
+  await page.keyboard.press("Alt+KeyJ");
+  await page.mouse.click(box.x + box.width * 0.3, box.y + box.height * 0.25);
+  const drawn = await saved();
+  expect(drawn.map((d) => d.kind).sort()).toEqual(["ray", "rect"]);
+  await page.mouse.move(box.x + box.width * 0.5, box.y + box.height * 0.5);
+  for (const dy of [-240, -240, 240, 240, 240]) await page.mouse.wheel(0, dy);
+  await page.waitForTimeout(300);
+  expect(await saved()).toEqual(drawn);
+
+  // A trade that hits its stop or target leaves no markers behind (TradingView-clean)…
+  await page.getByTestId("open-order-panel").click();
+  await page.getByTestId("ticket-sl").fill("3");
+  await page.getByTestId("ticket-tp").fill("3");
+  await page.getByTestId("ticket-submit").click();
+  await expect(page.getByTestId("position-row")).toHaveCount(1);
+  for (let i = 0; i < 40 && (await page.getByTestId("position-row").count()) > 0; i++) await page.getByTestId("replay-next").click();
+  await expect(page.getByTestId("position-row")).toHaveCount(0);
+  expect((await view()).markers).toBe(0);
+  // …unless "Past trades on chart" is switched on.
+  await page.getByTestId("chart-settings").click();
+  await page.getByRole("switch", { name: "Past trades on chart" }).click();
+  await expect.poll(async () => (await view()).markers).toBeGreaterThanOrEqual(2);
   expect(errors, errors.join("\n")).toEqual([]);
 });

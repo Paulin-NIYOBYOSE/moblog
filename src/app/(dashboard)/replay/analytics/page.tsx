@@ -12,10 +12,11 @@ import EmptyState from "@/components/ui/EmptyState";
 import Skeleton from "@/components/ui/Skeleton";
 import ReplayNav, { ReplayFooter } from "@/components/replay/ReplayNav";
 import VirtualRows from "@/components/replay/VirtualRows";
-import { fmtNum, fmtPct, fmtR, money, tone } from "@/components/replay/format";
-import { ActivityChart, Breakdowns, CumulativeRChart, DrawdownNote, EquityAndDrawdown, LongShort, MonthlyHeatmap, RDistributionChart, RollingWinRateChart, type Drill } from "@/components/replay/analytics/Charts";
+import { fmtPct, fmtR, money, tone } from "@/components/replay/format";
+import { ActivityChart, Breakdowns, CumulativeRChart, DrawdownNote, EquityAndDrawdown, LongShort, MonthlyReturns, RDistributionChart, RollingWinRateChart, type Drill } from "@/components/replay/analytics/Charts";
 import TradeExplorer from "@/components/replay/analytics/TradeExplorer";
-import { computeMetrics, enrichTrades, filterTrades, METRIC_HELP, sortByExit, type AnalyticsFilter, type AnalyticsTrade } from "@/lib/replay/analytics";
+import { CumulativePnl, DailyPnl, KpiStrip, PnlCalendar } from "@/components/replay/analytics/Dashboard";
+import { computeMetrics, dailyPerformance, enrichTrades, filterTrades, METRIC_HELP, sortByExit, type AnalyticsFilter, type AnalyticsTrade } from "@/lib/replay/analytics";
 import { formatDuration, formatInTz, fromInputValue, TIMEFRAMES } from "@/lib/replay/time";
 import type { Timeframe } from "@/lib/replay/types";
 import { useSessions } from "@/lib/replay/useReplayData";
@@ -30,18 +31,6 @@ function Help({ text }: { text: string }) {
         {text}
       </span>
     </span>
-  );
-}
-
-function Kpi({ label, value, sub, help, cls }: { label: string; value: string; sub?: string; help?: string; cls?: string }) {
-  return (
-    <div className="rounded-2xl border border-border bg-card p-4 shadow-card">
-      <div className="flex items-center gap-1 text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-muted">
-        {label} {help && <Help text={help} />}
-      </div>
-      <div className={cn("mt-1.5 text-[1.35rem] font-semibold leading-tight tracking-tight", cls)}>{value}</div>
-      {sub && <div className="mt-0.5 text-xs text-muted">{sub}</div>}
-    </div>
   );
 }
 
@@ -60,6 +49,9 @@ function AnalyticsInner() {
   const [tfs, setTfs] = useState<string[]>([]);
   const [tags, setTags] = useState<string[]>([]);
   const [side, setSide] = useState<"all" | "buy" | "sell">("all");
+  /** Several sessions: one shared account (default) or each session's own account summed. */
+  const [balanceMode, setBalanceMode] = useState<"one" | "sum">("one");
+  const [oneBalanceDraft, setOneBalanceDraft] = useState<string | null>(null);
   const [be, setBe] = useState(0);
   const [explore, setExplore] = useState<AnalyticsTrade | null>(null);
   const [drill, setDrill] = useState<Drill | null>(null);
@@ -88,10 +80,15 @@ function AnalyticsInner() {
     [from, to, symbols, strategies, setups, tfs, side, tags],
   );
   const trades = useMemo(() => sortByExit(filterTrades(allTrades, filter)), [allTrades, filter]);
-  const initialBalance = chosen.reduce((s, x) => s + x.settings.initialBalance, 0);
+  const sumBalance = chosen.reduce((s, x) => s + x.settings.initialBalance, 0);
+  // One account defaults to the first selected session's starting balance; the user can type another.
+  const typedOne = oneBalanceDraft !== null ? Number(oneBalanceDraft) : NaN;
+  const oneBalance = Number.isFinite(typedOne) && typedOne > 0 ? typedOne : (chosen[0]?.settings.initialBalance ?? 0);
+  const initialBalance = chosen.length <= 1 ? (chosen[0]?.settings.initialBalance ?? 0) : balanceMode === "sum" ? sumBalance : oneBalance;
   const currencies = Array.from(new Set(chosen.map((s) => s.settings.accountCurrency)));
   const ccy = currencies[0] ?? "USD";
   const m = useMemo(() => computeMetrics(trades, initialBalance, be), [trades, initialBalance, be]);
+  const days = useMemo(() => dailyPerformance(trades, be), [trades, be]);
   const open = chosen.reduce((s, x) => s + x.summary.openPositions, 0);
 
   const uniq = (xs: string[]) => Array.from(new Set(xs)).sort().map((v) => ({ value: v, label: v }));
@@ -209,12 +206,43 @@ function AnalyticsInner() {
       </Card>
 
       {chosen.length > 1 && (
-        <div className="flex items-start gap-2 rounded-xl border border-info/30 bg-info-soft px-4 py-2.5 text-sm text-info">
-          <Layers className="mt-0.5 h-4 w-4 shrink-0" />
-          <span>
-            Combining {chosen.length} sessions. Money metrics use a combined starting balance of {money(initialBalance, ccy)} and trades are ordered by their historical exit time. R-based metrics are directly comparable.
+        <div className="rounded-xl border border-info/30 bg-info-soft px-4 py-3 text-sm text-info" data-testid="combine-balance">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+            <span className="flex items-center gap-2 font-medium">
+              <Layers className="h-4 w-4 shrink-0" /> Combining {chosen.length} sessions — balance:
+            </span>
+            <SegmentedControl
+              value={balanceMode}
+              onChange={setBalanceMode}
+              options={[
+                { value: "one", label: "One account" },
+                { value: "sum", label: "Each session's own (summed)" },
+              ]}
+            />
+            {balanceMode === "one" && (
+              <label className="flex items-center gap-1.5 text-foreground">
+                <span className="text-xs text-muted">Starting balance</span>
+                <input
+                  type="number"
+                  min={1}
+                  step={100}
+                  className="input !h-8 !w-32 !py-0 text-sm tabular-nums"
+                  value={oneBalanceDraft ?? String(oneBalance)}
+                  onChange={(e) => setOneBalanceDraft(e.target.value)}
+                  aria-label="Starting balance of the one shared account"
+                  data-testid="one-balance"
+                />
+                <span className="text-xs text-muted">{ccy}</span>
+              </label>
+            )}
+          </div>
+          <p className="mt-1.5 text-xs leading-relaxed text-info/90">
+            {balanceMode === "one"
+              ? `All trades from these sessions run on one ${money(oneBalance, ccy)} account, in the order they closed — how the strategy behaves as a single account. Each trade's P&L is as recorded in its session (sized on that session's balance); returns and drawdown are measured on this one balance.`
+              : `Each session keeps its own account; returns and drawdown use the sessions' combined starting balance of ${money(sumBalance, ccy)}. Trades are ordered by their historical exit time.`}{" "}
+            R-based metrics are comparable either way.
             {currencies.length > 1 && <strong> Sessions use different account currencies ({currencies.join(", ")}) — money totals are not meaningful; rely on R.</strong>}
-          </span>
+          </p>
         </div>
       )}
       {(m.ambiguousExits > 0 || m.approxConversion > 0 || open > 0) && (
@@ -245,19 +273,13 @@ function AnalyticsInner() {
               early impressions, not evidence of an edge. Backtest results never guarantee future returns.
             </p>
           )}
-          <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6" data-testid="analytics-kpis">
-            <Kpi label="Net P&L" value={money(m.netPnl, ccy, { signed: true })} sub={`${fmtPct(m.returnPct, 2, true)} on ${money(initialBalance, ccy)}`} help={METRIC_HELP.netPnl} cls={tone(m.netPnl)} />
-            <Kpi label="Win rate" value={fmtPct(m.winRate)} sub={`${m.wins}W · ${m.losses}L · ${m.breakeven}BE of ${m.total}`} help={METRIC_HELP.winRate} />
-            <Kpi
-              label="Profit factor"
-              value={m.profitFactor !== null ? fmtNum(m.profitFactor) : m.profitFactorNote === "no-losses" ? "No losses" : "—"}
-              sub={`${money(m.grossProfit, ccy)} / ${money(m.grossLoss, ccy)}`}
-              help={METRIC_HELP.profitFactor}
-            />
-            <Kpi label="Expectancy" value={fmtR(m.expectancyR)} sub={`${money(m.expectancyMoney, ccy, { signed: true })} per trade`} help={METRIC_HELP.expectancyR} cls={tone(m.expectancyR)} />
-            <Kpi label="Max drawdown" value={money(m.maxDrawdown, ccy)} sub={fmtPct(m.maxDrawdownPct, 2)} help={METRIC_HELP.maxDrawdown} cls={m.maxDrawdown > 0 ? "text-loss" : undefined} />
-            <Kpi label="Total R" value={fmtR(m.totalR, 1)} sub={`${m.validR} of ${m.total} trade${m.total === 1 ? "" : "s"} with a stop`} help={METRIC_HELP.rMultiple} cls={tone(m.totalR)} />
+          <KpiStrip m={m} ccy={ccy} />
+          <div className="grid gap-5 xl:grid-cols-2">
+            <CumulativePnl days={days} ccy={ccy} trades={trades} onDrill={drillTo} />
+            <DailyPnl days={days} ccy={ccy} trades={trades} onDrill={drillTo} />
           </div>
+          <MonthlyReturns trades={trades} initialBalance={initialBalance} ccy={ccy} onDrill={drillTo} />
+          <PnlCalendar days={days} ccy={ccy} trades={trades} onDrill={drillTo} />
 
           <Card>
             <CardHeader icon={BarChart3} title="All metrics" subtitle="Hover the ⓘ for definitions. Every figure is computed from the filtered closed trades." />
@@ -305,16 +327,16 @@ function AnalyticsInner() {
               <RDistributionChart trades={trades} onDrill={drillTo} />
             </div>
           </div>
-          <div className="grid gap-5 xl:grid-cols-2">
-            <MonthlyHeatmap trades={trades} ccy={ccy} onDrill={drillTo} />
-            <RollingWinRateChart trades={trades} />
-          </div>
+
           <div className="grid gap-5 xl:grid-cols-[1fr_2fr]">
             <LongShort trades={trades} ccy={ccy} be={be} />
             <Breakdowns trades={trades} ccy={ccy} be={be} onDrill={drillTo} />
           </div>
 
-          <ActivityChart trades={trades} ccy={ccy} onDrill={drillTo} />
+          <div className="grid gap-5 xl:grid-cols-2">
+            <RollingWinRateChart trades={trades} />
+            <ActivityChart trades={trades} ccy={ccy} onDrill={drillTo} />
+          </div>
 
           <Card padding="none">
             <div className="scroll-mt-4 px-4 pt-4 sm:px-5" ref={tableRef}>

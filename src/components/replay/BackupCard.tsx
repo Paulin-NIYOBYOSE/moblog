@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import { Database, Download, HardDriveUpload, Loader2, Upload } from "lucide-react";
 import Card, { CardHeader } from "@/components/ui/Card";
 import { Toggle } from "@/components/ui/Inputs";
@@ -16,23 +16,48 @@ export function bytes(n: number): string {
   return `${Math.max(0, Math.round(n / 1e3))} KB`;
 }
 
+// One shared, cached status for every meter on the page (the dashboard shows
+// two). It's an aggregate over Replay's tables, so it's refreshed at most once
+// a minute, plus after any change.
+const STATUS_FRESH_MS = 60_000;
+let statusState: { st: StorageStatus | null; err: string | null } = { st: null, err: null };
+let statusAt = 0;
+let statusInflight: Promise<void> | null = null;
+const statusListeners = new Set<() => void>();
+
+function refreshStatus(): Promise<void> {
+  statusInflight ??= storageStatus()
+    .then((st) => {
+      statusAt = Date.now();
+      statusState = { st, err: null };
+    })
+    .catch((e) => {
+      statusState = { ...statusState, err: statusState.st ? null : e instanceof Error ? e.message : String(e) };
+    })
+    .finally(() => {
+      statusInflight = null;
+      for (const l of statusListeners) l();
+    });
+  return statusInflight;
+}
+
+function subscribeStatus(fn: () => void) {
+  statusListeners.add(fn);
+  return () => {
+    statusListeners.delete(fn);
+  };
+}
+
+const EMPTY_STATUS = { st: null, err: null };
+
 /** Database usage of Replay's tables (candles, sessions, journal). */
 export function StorageMeter({ compact = false }: { compact?: boolean }) {
-  const [st, setSt] = useState<StorageStatus | null>(null);
-  const [err, setErr] = useState<string | null>(null);
+  const { st, err } = useSyncExternalStore(subscribeStatus, () => statusState, () => EMPTY_STATUS);
   useEffect(() => {
-    let alive = true;
-    const load = () =>
-      storageStatus()
-        .then((s) => alive && (setSt(s), setErr(null)))
-        .catch((e) => alive && setErr(e instanceof Error ? e.message : String(e)));
-    void load();
-    const on = () => void load();
+    if (Date.now() - statusAt > STATUS_FRESH_MS) void refreshStatus();
+    const on = () => void refreshStatus();
     window.addEventListener("replay-db-changed", on);
-    return () => {
-      alive = false;
-      window.removeEventListener("replay-db-changed", on);
-    };
+    return () => window.removeEventListener("replay-db-changed", on);
   }, []);
   if (err) return <div className="rounded-xl border border-loss/30 bg-loss-soft p-3 text-xs text-loss">{err}</div>;
   if (!st) return <div className="h-[72px] animate-pulse rounded-xl border border-border bg-surface-2" />;

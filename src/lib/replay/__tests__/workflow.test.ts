@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
+import { aggregate } from "../aggregate";
 import { computeMetrics, enrichTrades, equityCurve } from "../analytics";
 import { indexAtOrBefore } from "../bars";
 import { detectFormat, parseCsvText } from "../csv";
@@ -57,6 +58,23 @@ describe("candle pack format", () => {
 
 describe.skipIf(!hasDb)("database storage", () => {
   beforeEach(resetReplayTables);
+
+  it("serves older history as hourly candles built from the stored 1-minute data", async () => {
+    const from = utc(2024, 1, 2);
+    const { ds, parsed } = await importCsv(histdataCsv(from, 3 * 1440, (i) => 1.1 + Math.sin(i / 50) * 0.002));
+    const a = from + 5 * 3600;
+    const b = from + 2 * 86_400 - 1;
+    const { buffer, bars } = await store.loadHourlyPacked(ds.id, a, b);
+    const hourly = unpackBars(new Uint8Array(buffer));
+    const lo = indexAtOrBefore(parsed.bars, a - 1) + 1;
+    const hi = indexAtOrBefore(parsed.bars, b);
+    const expected = aggregate(parsed.bars, "M1", "H1", "utc", hi, lo);
+    expect(bars).toBe(expected.length);
+    expect(hourly.n).toBe(expected.length);
+    for (let i = 0; i < hourly.n; i++) {
+      expect([hourly.t[i], hourly.o[i], hourly.h[i], hourly.l[i], hourly.c[i]]).toEqual([expected[i].time, expected[i].open, expected[i].high, expected[i].low, expected[i].close]);
+    }
+  });
 
   it("stores candles per UTC day, loads only the requested range and merges appends", async () => {
     // 30 Jan 22:00 → 1 Feb 02:00 UTC spans two months and three days.

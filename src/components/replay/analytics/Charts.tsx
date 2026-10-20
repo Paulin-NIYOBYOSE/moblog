@@ -12,14 +12,14 @@ import {
   equityCurve,
   groupBy,
   holdingDistribution,
-  monthlyPerformance,
+  monthlyReturns,
   rDistribution,
   rollingWinRate,
   WEEKDAY_NAMES,
   type AnalyticsTrade,
   type GroupRow,
 } from "@/lib/replay/analytics";
-import { formatInTz, marketSessionOf, tradingWeekday } from "@/lib/replay/time";
+import { formatInTz, marketSessionOf, monthKeyUtc, tradingWeekday } from "@/lib/replay/time";
 import { cn, MONTHS } from "@/lib/utils";
 import { fmtPct, fmtR, money, tone } from "../format";
 import { Activity, BarChart3, CalendarRange, Clock, LineChart as LineIcon, Scale, Sigma, TrendingDown } from "lucide-react";
@@ -216,66 +216,77 @@ function heatColor(v: number, max: number): string {
   return `color-mix(in srgb, ${v > 0 ? "var(--profit)" : "var(--loss)"} ${steps[level]}%, var(--surface-3))`;
 }
 
-export function MonthlyHeatmap({ trades, ccy, onDrill }: { trades: AnalyticsTrade[]; ccy: string; onDrill?: OnDrill }) {
-  const cells = useMemo(() => monthlyPerformance(trades), [trades]);
-  const years = Array.from(new Set(cells.map((c) => c.month.slice(0, 4)))).sort();
-  const max = Math.max(...cells.map((c) => Math.abs(c.net)), 0);
-  const get = (y: string, m: number) => cells.find((c) => c.month === `${y}-${String(m + 1).padStart(2, "0")}`);
+export function MonthlyReturns({ trades, initialBalance, ccy, onDrill }: { trades: AnalyticsTrade[]; initialBalance: number; ccy: string; onDrill?: OnDrill }) {
+  const { months, years } = useMemo(() => monthlyReturns(trades, initialBalance), [trades, initialBalance]);
+  const byMonth = useMemo(() => new Map(months.map((m) => [m.month, m])), [months]);
+  const maxMonth = Math.max(0, ...months.map((m) => Math.abs(m.pct ?? 0)));
+  const maxYear = Math.max(0, ...years.map((y) => Math.abs(y.pct ?? 0)));
+  const pctText = (v: number | null) => (v === null ? "—" : `${v > 0.005 ? "+" : v < -0.005 ? "−" : ""}${Math.abs(v).toFixed(2)}%`);
+  const drill = (label: string, match: (t: AnalyticsTrade) => boolean) => onDrill?.({ label, ids: new Set(trades.filter(match).map((t) => t.id)) });
+  const cell = (key: string, label: string, r: { net: number; count: number; startBalance: number; pct: number | null }, max: number, match: (t: AnalyticsTrade) => boolean, strong = false) => (
+    <div
+      key={key}
+      role="button"
+      tabIndex={0}
+      onClick={() => drill(label, match)}
+      onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), drill(label, match))}
+      className={cn("group relative flex h-14 flex-col items-center justify-center rounded-lg text-center tabular-nums transition-shadow", onDrill && "hover:ring-2 hover:ring-accent/60")}
+      style={{ background: heatColor(r.pct ?? 0, max) }}
+      aria-label={`${label}: ${pctText(r.pct)}, ${money(r.net, ccy, { signed: true })} over ${r.count} trade${r.count === 1 ? "" : "s"}`}
+      data-testid="return-cell"
+    >
+      <span className={cn("text-foreground", strong ? "text-[0.95rem] font-bold" : "text-[0.85rem] font-semibold")}>{pctText(r.pct)}</span>
+      <span className="text-[10px] text-foreground/60">
+        {r.count} trade{r.count === 1 ? "" : "s"}
+      </span>
+      <span className="pointer-events-none absolute bottom-full left-1/2 z-30 mb-1.5 hidden -translate-x-1/2 text-left group-hover:block group-focus-visible:block">
+        <ChartTooltipBox
+          title={label}
+          rows={[
+            { label: "Return", value: pctText(r.pct), tone: (r.pct ?? 0) >= 0 ? "profit" : "loss" },
+            { label: "Net P&L", value: money(r.net, ccy, { signed: true }), tone: r.net >= 0 ? "profit" : "loss" },
+            { label: "Start balance", value: money(r.startBalance, ccy) },
+            { label: "Trades", value: String(r.count) },
+          ]}
+          footer={onDrill ? "Click to list these trades" : undefined}
+        />
+      </span>
+    </div>
+  );
   return (
     <Card>
-      <CardHeader icon={CalendarRange} title="Monthly performance" subtitle="Net P&L by month of exit (historical replay months, UTC)." />
-      {!cells.length ? (
-        <ChartEmpty>Monthly results appear once trades close.</ChartEmpty>
+      <CardHeader icon={CalendarRange} title="Monthly returns" subtitle="Return on the balance at the start of each month, by exit month (UTC). The year column compounds its months." />
+      {!months.length ? (
+        <ChartEmpty>Monthly returns appear once trades close.</ChartEmpty>
       ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[560px] border-separate border-spacing-[3px] text-[11px]">
-            <thead>
-              <tr>
-                <th className="w-12" />
-                {MONTHS.map((m) => (
-                  <th key={m} className="font-medium text-muted">
-                    {m.slice(0, 3)}
-                  </th>
-                ))}
-                <th className="font-medium text-muted">Year</th>
-              </tr>
-            </thead>
-            <tbody>
-              {years.map((y) => {
-                const yearNet = cells.filter((c) => c.month.startsWith(y)).reduce((s, c) => s + c.net, 0);
-                return (
-                  <tr key={y}>
-                    <td className="pr-1 text-right font-medium text-muted">{y}</td>
-                    {MONTHS.map((_, m) => {
-                      const c = get(y, m);
-                      return (
-                        <td
-                          key={m}
-                          onClick={() => {
-                            if (!c || !onDrill) return;
-                            const key = `${y}-${String(m + 1).padStart(2, "0")}`;
-                            onDrill({ label: `${MONTHS[m]} ${y}`, ids: new Set(trades.filter((t) => new Date(t.exitT * 1000).toISOString().slice(0, 7) === key).map((t) => t.id)) });
-                          }}
-                          className={cn("h-9 rounded-md text-center tabular-nums", c && onDrill && "cursor-pointer hover:ring-2 hover:ring-accent/50")}
-                          style={{ background: c ? heatColor(c.net, max) : "transparent", border: c ? undefined : "1px dashed var(--border)" }}
-                          title={c ? `${MONTHS[m]} ${y}: ${money(c.net, ccy, { signed: true })} over ${c.count} trade(s)` : `${MONTHS[m]} ${y}: no trades`}
-                        >
-                          {c ? <span className="font-semibold text-foreground">{axisMoney(c.net)}</span> : null}
-                        </td>
-                      );
-                    })}
-                    <td className={cn("px-1 text-right font-semibold tabular-nums", tone(yearNet))}>{money(yearNet, ccy, { signed: true, compact: Math.abs(yearNet) >= 10000 })}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-          <div className="mt-2 flex items-center justify-end gap-2 text-[10.5px] text-muted">
-            <span>Loss</span>
-            {[-0.9, -0.5, 0, 0.5, 0.9].map((k) => (
-              <span key={k} className="h-3 w-5 rounded-sm" style={{ background: heatColor(k * (max || 1), max || 1) }} />
+        <div className="overflow-x-auto" data-testid="monthly-returns">
+          <div className="grid min-w-[880px] grid-cols-[3.5rem_repeat(12,minmax(0,1fr))_minmax(5.5rem,1.15fr)] gap-1.5">
+            <div />
+            {MONTHS.map((m) => (
+              <div key={m} className="pb-0.5 text-center text-[11px] font-medium text-muted">
+                {m.slice(0, 3)}
+              </div>
             ))}
-            <span>Profit</span>
+            <div className="pb-0.5 text-center text-[11px] font-semibold text-muted">Year</div>
+            {years.map((y) => [
+              <div key={`l${y.year}`} className="flex items-center text-sm font-semibold text-muted">
+                {y.year}
+              </div>,
+              ...MONTHS.map((name, i) => {
+                const key = `${y.year}-${String(i + 1).padStart(2, "0")}`;
+                const r = byMonth.get(key);
+                if (!r) return <div key={key} className="h-14 rounded-lg border border-dashed border-border/70" aria-label={`${name} ${y.year}: no trades`} />;
+                return cell(key, `${name} ${y.year}`, r, maxMonth, (t) => monthKeyUtc(t.exitT) === key);
+              }),
+              cell(`y${y.year}`, `${y.year} (year)`, y, maxYear, (t) => monthKeyUtc(t.exitT).startsWith(y.year), true),
+            ])}
+          </div>
+          <div className="mt-3 flex items-center justify-end gap-1.5 text-[10.5px] text-muted">
+            <span>{pctText(-maxMonth)}</span>
+            {[-1, -0.6, -0.3, 0, 0.3, 0.6, 1].map((k) => (
+              <span key={k} className="h-3 w-6 rounded-sm" style={{ background: heatColor(k * (maxMonth || 1), maxMonth || 1) }} />
+            ))}
+            <span>{pctText(maxMonth)}</span>
           </div>
         </div>
       )}

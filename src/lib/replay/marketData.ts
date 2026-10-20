@@ -1,7 +1,8 @@
 import { FXCM, fxcmEarliestT, fxcmSupports, latestPublishedSunday, planFxcmChunks, providerDatasetId, weekSundayOf, type FxcmChunk } from "./providers/fxcm";
 import { conversionPair, needsConversionRate, resolveInstrument } from "./instruments";
 import { ApiError, getDataset, loadBars } from "./storage/repo";
-import type { DatasetMeta, Timeframe } from "./types";
+import { CONTEXT_TF, historyPlan } from "./history";
+import type { DatasetMeta, ReplaySession, Timeframe } from "./types";
 
 // Market-data service (browser side). Resolves a request (symbol, resolution,
 // range) to the provider's weekly files, reuses what the database already
@@ -18,6 +19,19 @@ export interface DataRequest {
   resolution: Timeframe;
   fromT: number;
   toT: number;
+}
+
+/**
+ * What a provider session needs: base candles from ~3 months before the start
+ * to the end, plus hourly candles for any older history (chart only).
+ */
+export function sessionDataRequests(s: Pick<ReplaySession, "symbol" | "historyStartT" | "startT" | "endT" | "source" | "settings">): { fine: DataRequest; context: DataRequest | null } {
+  const resolution = s.source?.resolution ?? "M1";
+  const plan = historyPlan(s, resolution, s.settings.dayBoundary);
+  return {
+    fine: { provider: "fxcm", symbol: s.symbol, resolution, fromT: plan.fineFromT, toT: s.endT },
+    context: plan.context ? { provider: "fxcm", symbol: s.symbol, resolution: CONTEXT_TF, fromT: plan.context.fromT, toT: plan.context.toT - 1 } : null,
+  };
 }
 
 export type Stage = "check-cache" | "check-provider" | "download" | "validate" | "save" | "prepare" | "done";

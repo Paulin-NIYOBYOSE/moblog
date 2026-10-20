@@ -11,6 +11,7 @@ import { DEFAULT_SPREAD_PIPS, PRIMARY_SYMBOLS, resolveInstrument, needsConversio
 import { checkAvailability, suggestConversionRate, type Availability } from "@/lib/replay/marketData";
 import { FXCM, fxcmEarliestT, fxcmSupports, latestPublishedSunday } from "@/lib/replay/providers/fxcm";
 import { createProviderSession, createSession, defaultSettings } from "@/lib/replay/session";
+import { CONTEXT_TF, historyPlan } from "@/lib/replay/history";
 import { getInstrumentPrefs, saveInstrumentPrefs, saveSession, type InstrumentPrefs } from "@/lib/replay/storage/repo";
 import { availableTimeframes, TF_LABEL } from "@/lib/replay/time";
 import type { DatasetMeta, RiskMode, SessionSettings, Timeframe } from "@/lib/replay/types";
@@ -27,6 +28,17 @@ const PRESETS: { id: string; label: string; days: number }[] = [
   { id: "5y", label: "5 years", days: 1826 },
 ];
 const WIZARD_TFS: Timeframe[] = ["M1", "M5", "M15", "M30", "H1", "H4", "D1"];
+const HISTORY_OPTIONS: { days: number; label: string }[] = [
+  { days: 0, label: "None" },
+  { days: 7, label: "1 week" },
+  { days: 30, label: "1 month" },
+  { days: 91, label: "3 months" },
+  { days: 182, label: "6 months" },
+  { days: 365, label: "1 year" },
+  { days: 730, label: "2 years" },
+  { days: 1095, label: "3 years" },
+  { days: 1826, label: "5 years" },
+];
 const STEPS = ["Market", "Period & timeframe", "Trading settings", "Review"];
 
 const toDateInput = (t: number) => new Date(t * 1000).toISOString().slice(0, 10);
@@ -84,8 +96,11 @@ export default function SessionWizard({ initialSymbol, initialDatasetId }: { ini
   const [preset, setPreset] = useState("3m");
   const [fromDate, setFromDate] = useState(toDateInput(latestEnd - 91 * DAY));
   const [toDate, setToDate] = useState(toDateInput(latestEnd));
-  const [historyDays, setHistoryDays] = useState(30);
+  // A year of chart history by default, so there's context to analyse before the first candle.
+  const [historyDays, setHistoryDays] = useState(365);
   const [avail, setAvail] = useState<Availability | null>(null);
+  /** Older history fetched as hourly candles (chart only), when the history is long. */
+  const [ctxAvail, setCtxAvail] = useState<Availability | null>(null);
   const [checking, setChecking] = useState(false);
   const [checkError, setCheckError] = useState<string | null>(null);
   const [settings, setSettings] = useState<SessionSettings>(() => ({ ...defaultSettings({ symbol: "EURUSD", hasSpread: true }), spreadMode: "recorded" }));
@@ -109,6 +124,7 @@ export default function SessionWizard({ initialSymbol, initialDatasetId }: { ini
 
 
   const spec = symbol ? resolveInstrument(symbol) : null;
+  const dayBoundary = settings.dayBoundary;
   const importedFor = (sym: string) => datasets.filter((d) => d.symbol === sym && !d.missingCandles);
   const fromT = fromDateInput(fromDate);
   const toT = fromDateInput(toDate, true);
@@ -187,8 +203,13 @@ export default function SessionWizard({ initialSymbol, initialDatasetId }: { ini
       setChecking(true);
       setCheckError(null);
       try {
-        const a = await checkAvailability({ provider: "fxcm", symbol, resolution, fromT: fromT - historyDays * DAY, toT }, { signal: ctrl.signal });
-        if (seq === checkSeq.current) setAvail(a);
+        const plan = historyPlan({ historyStartT: Math.max(fxcmEarliestT(), fromT - historyDays * DAY), startT: fromT }, resolution, dayBoundary);
+        const a = await checkAvailability({ provider: "fxcm", symbol, resolution, fromT: plan.fineFromT, toT }, { signal: ctrl.signal });
+        const c = plan.context ? await checkAvailability({ provider: "fxcm", symbol, resolution: CONTEXT_TF, fromT: plan.context.fromT, toT: plan.context.toT - 1 }, { signal: ctrl.signal }) : null;
+        if (seq === checkSeq.current) {
+          setAvail(a);
+          setCtxAvail(c);
+        }
       } catch (e) {
         if (seq === checkSeq.current && !(e instanceof DOMException)) setCheckError(e instanceof Error ? e.message : String(e));
       } finally {
@@ -199,7 +220,7 @@ export default function SessionWizard({ initialSymbol, initialDatasetId }: { ini
       clearTimeout(timer);
       ctrl.abort();
     };
-  }, [step, symbol, source.kind, resolution, fromT, toT, historyDays]);
+  }, [step, symbol, source.kind, resolution, fromT, toT, historyDays, dayBoundary]);
 
   // Prefill the conversion rate for crosses from the conversion pair's real data.
   const lookupRate = (currency: string) => {
@@ -428,12 +449,13 @@ export default function SessionWizard({ initialSymbol, initialDatasetId }: { ini
               <Field label="To (UTC)">
                 <input type="date" className="input" value={toDate} min={fromDate} max={toDateInput(rangeTo)} onChange={(e) => (setPreset("custom"), setToDate(e.target.value))} data-testid="wizard-to" />
               </Field>
-              <Field label="History before the start" hint="Shown on the chart for context.">
+              <Field label="History before the start" hint="Chart history to analyse before the first replay candle. Beyond 3 months it loads as hourly candles (1h+ charts).">
                 <select className="input" value={historyDays} onChange={(e) => setHistoryDays(Number(e.target.value))}>
-                  <option value={0}>None</option>
-                  <option value={7}>1 week</option>
-                  <option value={30}>1 month</option>
-                  <option value={91}>3 months</option>
+                  {HISTORY_OPTIONS.map((o) => (
+                    <option key={o.days} value={o.days}>
+                      {o.label}
+                    </option>
+                  ))}
                 </select>
               </Field>
             </div>
@@ -518,10 +540,20 @@ export default function SessionWizard({ initialSymbol, initialDatasetId }: { ini
                   <p className="text-xs text-muted sm:col-span-3">
                     ≈ {avail.estimatedCandles.toLocaleString()} {resolution} candles (≈ {bytes(avail.estimatedCandles * 10)} of database storage), bid + ask prices, UTC. Source: {FXCM.name}.
                   </p>
+                  {ctxAvail?.supported && (
+                    <p className="flex items-start gap-1.5 text-xs text-muted sm:col-span-3" data-testid="context-preview">
+                      <Database className="mt-0.5 h-3.5 w-3.5 shrink-0 text-info" />
+                      <span>
+                        Older history ({fmtDate(ctxAvail.fromT)} → {fmtDate(ctxAvail.toT)}) comes as hourly candles for the chart and indicators: {ctxAvail.chunksTotal} weeks, {ctxAvail.chunksCached} stored,{" "}
+                        <span className="font-semibold text-foreground">{ctxAvail.chunksToDownload} to download</span>
+                        {ctxAvail.estimatedBytes !== null && ctxAvail.chunksToDownload > 0 ? ` (≈ ${bytes(ctxAvail.estimatedBytes)})` : ""}. Shown on 1h and higher timeframes; trades always use the 1-minute data.
+                      </span>
+                    </p>
+                  )}
                 </div>
               ) : null}
               {checkError && <p className="mt-2 text-sm text-loss">{checkError}</p>}
-              {avail?.warnings.map((w) => (
+              {[...(avail?.warnings ?? []), ...(ctxAvail?.warnings ?? []).filter((w) => !avail?.warnings.includes(w))].map((w) => (
                 <p key={w} className="mt-2 flex items-start gap-1.5 text-xs text-warning">
                   <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" /> {w}
                 </p>
@@ -670,7 +702,7 @@ export default function SessionWizard({ initialSymbol, initialDatasetId }: { ini
                   ["Period", `${fmtDate(finalFrom)} → ${fmtDate(finalTo)}`],
                   ["Replay starts", fmtDate(startT)],
                   ["Chart timeframe", `${timeframe} — ${TF_LABEL[timeframe]}`],
-                  ["History before start", historyDays ? `${historyDays} days` : "None"],
+                  ["History before start", HISTORY_OPTIONS.find((o) => o.days === historyDays)?.label ?? `${historyDays} days`],
                   ["Account", `${settings.initialBalance.toLocaleString()} ${settings.accountCurrency}`],
                   ["Sizing", settings.riskMode === "percent" ? `${settings.riskPercent}% risk per trade` : settings.riskMode === "money" ? `${settings.riskMoney} ${settings.accountCurrency} risk per trade` : `${settings.fixedLots} lots`],
                   ["Costs", `${settings.spreadMode === "recorded" ? "historical spread" : `${settings.spreadPips} pip spread`} · ${settings.slippagePips} pip slippage · ${settings.commissionPerLot} ${settings.accountCurrency}/lot commission`],

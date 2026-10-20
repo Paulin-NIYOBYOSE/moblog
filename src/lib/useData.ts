@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useSyncExternalStore } from "react";
 import { useToast } from "@/components/ToastContext";
 import type { Account, AccountInput, Trade, TradeInput, Content, ContentInput } from "./types";
 
@@ -13,76 +13,120 @@ async function parseError(res: Response): Promise<string> {
   }
 }
 
-// Every component calls useData() for its own copy of the data, so a mutation
-// in one place (e.g. the global trade modal) must tell the others to refetch —
-// otherwise the page behind the modal keeps showing stale trades/balances.
-const DATA_CHANGED_EVENT = "moblog:data-changed";
+// One shared store for accounts, trades and content. The layout, sidebar,
+// modals and page all call useData(); they now share a single copy instead of
+// each fetching everything (which queued ~12 requests per page load). Each
+// resource is fetched once (in-flight requests are reused), the three load in
+// parallel, and navigating between pages shows the cached data at once while
+// it refreshes quietly in the background.
+
+interface DataState {
+  accounts: Account[];
+  trades: Trade[];
+  content: Content[];
+  loading: boolean;
+  error: string | null;
+}
+
+type Resource = "accounts" | "trades" | "content";
+const URLS: Record<Resource, string> = { accounts: "/api/accounts", trades: "/api/trades", content: "/api/content" };
+/** Data younger than this is shown without refetching when a page mounts. */
+const FRESH_MS = 30_000;
+
+const initialState: DataState = { accounts: [], trades: [], content: [], loading: true, error: null };
+let state: DataState = initialState;
+const listeners = new Set<() => void>();
+const inflight = new Map<Resource, Promise<void>>();
+let inflightAll: Promise<void> | null = null;
+let loadedAt = 0;
+
+function setState(patch: Partial<DataState>) {
+  state = { ...state, ...patch };
+  for (const l of listeners) l();
+}
+
+function subscribe(fn: () => void) {
+  listeners.add(fn);
+  return () => {
+    listeners.delete(fn);
+  };
+}
+
+const getState = () => state;
+const getServerState = () => initialState;
+
+function load(r: Resource): Promise<void> {
+  const running = inflight.get(r);
+  if (running) return running;
+  const p = fetch(URLS[r], { cache: "no-store" })
+    .then(async (res) => {
+      if (!res.ok) throw new Error(await parseError(res));
+      setState({ [r]: await res.json() } as Partial<DataState>);
+    })
+    .finally(() => inflight.delete(r));
+  inflight.set(r, p);
+  return p;
+}
+
+/** Load everything once; concurrent callers share the same requests. */
+function loadAll(): { promise: Promise<void>; started: boolean } {
+  if (inflightAll) return { promise: inflightAll, started: false };
+  const p = (async () => {
+    try {
+      setState({ error: null });
+      await Promise.all([load("accounts"), load("trades"), load("content")]);
+      loadedAt = Date.now();
+    } catch (e) {
+      setState({ error: e instanceof Error ? e.message : "Failed to load data" });
+      throw e;
+    } finally {
+      setState({ loading: false });
+      inflightAll = null;
+    }
+  })();
+  inflightAll = p;
+  return { promise: p, started: true };
+}
 
 export function useData() {
-  const [accounts, setAccounts] = useState<Account[]>([]);
-  const [trades, setTrades] = useState<Trade[]>([]);
-  const [content, setContent] = useState<Content[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const { accounts, trades, content, loading, error } = useSyncExternalStore(subscribe, getState, getServerState);
   const toast = useToast();
-  // ToastProvider builds a fresh `toast` object on every render, so depending
-  // on it directly would rebuild `refresh` each time a toast fires — and a
-  // failed fetch showing an error toast would then retrigger that same fetch
-  // in a loop. Read it through a ref instead.
+  // ToastProvider builds a fresh `toast` object on every render; read it
+  // through a ref so callbacks stay stable.
   const toastRef = useRef(toast);
   useEffect(() => {
     toastRef.current = toast;
   }, [toast]);
-  const instanceId = useId();
-  const notify = useCallback(() => {
-    window.dispatchEvent(new CustomEvent(DATA_CHANGED_EVENT, { detail: instanceId }));
-  }, [instanceId]);
 
-  const refreshAccounts = useCallback(async () => {
-    const res = await fetch("/api/accounts", { cache: "no-store" });
-    if (!res.ok) throw new Error(await parseError(res));
-    setAccounts(await res.json());
-  }, []);
+  const refreshAccounts = useCallback(() => load("accounts"), []);
+  /** Reload trades (all accounts — pages filter by the selected account). */
+  const refreshTrades = useCallback(
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    (_accountId?: string | null) => load("trades"),
+    [],
+  );
+  const refreshContent = useCallback(() => load("content"), []);
 
-  const refreshTrades = useCallback(async (accountId?: string | null) => {
-    const qs = accountId ? `?accountId=${encodeURIComponent(accountId)}` : "";
-    const res = await fetch(`/api/trades${qs}`, { cache: "no-store" });
-    if (!res.ok) throw new Error(await parseError(res));
-    setTrades(await res.json());
-  }, []);
-
-  const refreshContent = useCallback(async () => {
-    const res = await fetch("/api/content", { cache: "no-store" });
-    if (!res.ok) throw new Error(await parseError(res));
-    setContent(await res.json());
-  }, []);
-
-  const refresh = useCallback(async (accountId?: string | null) => {
+  const refresh = useCallback(async () => {
+    loadedAt = 0;
+    const { promise, started } = loadAll();
     try {
-      setError(null);
-      await refreshAccounts();
-      await refreshTrades(accountId);
-      await refreshContent();
+      await promise;
     } catch (e) {
-      const msg = e instanceof Error ? e.message : "Failed to load data";
-      setError(msg);
-      toastRef.current.error(msg);
-    } finally {
-      setLoading(false);
+      if (started) toastRef.current.error(e instanceof Error ? e.message : "Failed to load data");
     }
-  }, [refreshAccounts, refreshTrades, refreshContent]);
+  }, []);
 
+  // First mount anywhere loads the data; later mounts reuse it while fresh.
   useEffect(() => {
-    refresh();
-  }, [refresh]);
+    if (loadedAt && Date.now() - loadedAt < FRESH_MS) return;
+    const { promise, started } = loadAll();
+    promise.catch((e) => {
+      if (started) toastRef.current.error(e instanceof Error ? e.message : "Failed to load data");
+    });
+  }, []);
 
-  useEffect(() => {
-    function onChanged(e: Event) {
-      if ((e as CustomEvent).detail !== instanceId) refresh();
-    }
-    window.addEventListener(DATA_CHANGED_EVENT, onChanged);
-    return () => window.removeEventListener(DATA_CHANGED_EVENT, onChanged);
-  }, [refresh, instanceId]);
+  // Mutations reload into the shared store, so every component sees them at once.
 
   const createAccount = useCallback(async (input: AccountInput) => {
     const toastId = toastRef.current.loading("Creating account...");
@@ -95,14 +139,13 @@ export function useData() {
       if (!res.ok) throw new Error(await parseError(res));
       await refreshAccounts();
       toastRef.current.success("Account created");
-      notify();
     } catch (e) {
       toastRef.current.error(e instanceof Error ? e.message : "Failed to create account");
       throw e;
     } finally {
       toastRef.current.remove(toastId);
     }
-  }, [refreshAccounts, notify]);
+  }, [refreshAccounts]);
 
   const updateAccount = useCallback(
     async (id: string, input: AccountInput) => {
@@ -116,7 +159,6 @@ export function useData() {
         if (!res.ok) throw new Error(await parseError(res));
         await refreshAccounts();
         toastRef.current.success("Account updated");
-        notify();
       } catch (e) {
         toastRef.current.error(e instanceof Error ? e.message : "Failed to update account");
         throw e;
@@ -124,7 +166,7 @@ export function useData() {
         toastRef.current.remove(toastId);
       }
     },
-    [refreshAccounts, notify],
+    [refreshAccounts],
   );
 
   const deleteAccount = useCallback(
@@ -135,7 +177,6 @@ export function useData() {
         if (!res.ok) throw new Error(await parseError(res));
         await refreshAccounts();
         toastRef.current.success("Account deleted");
-        notify();
       } catch (e) {
         toastRef.current.error(e instanceof Error ? e.message : "Failed to delete account");
         throw e;
@@ -143,7 +184,7 @@ export function useData() {
         toastRef.current.remove(toastId);
       }
     },
-    [refreshAccounts, notify],
+    [refreshAccounts],
   );
 
   const createTrade = useCallback(
@@ -158,7 +199,6 @@ export function useData() {
         if (!res.ok) throw new Error(await parseError(res));
         await refreshTrades(input.accountId);
         toastRef.current.success("Trade saved");
-        notify();
       } catch (e) {
         toastRef.current.error(e instanceof Error ? e.message : "Failed to save trade");
         throw e;
@@ -166,7 +206,7 @@ export function useData() {
         toastRef.current.remove(toastId);
       }
     },
-    [refreshTrades, notify],
+    [refreshTrades],
   );
 
   const updateTrade = useCallback(
@@ -181,7 +221,6 @@ export function useData() {
         if (!res.ok) throw new Error(await parseError(res));
         await refreshTrades(input.accountId);
         toastRef.current.success("Trade updated");
-        notify();
       } catch (e) {
         toastRef.current.error(e instanceof Error ? e.message : "Failed to update trade");
         throw e;
@@ -189,7 +228,7 @@ export function useData() {
         toastRef.current.remove(toastId);
       }
     },
-    [refreshTrades, notify],
+    [refreshTrades],
   );
 
   const deleteTrade = useCallback(
@@ -200,7 +239,6 @@ export function useData() {
         if (!res.ok) throw new Error(await parseError(res));
         await refreshTrades(accountId);
         toastRef.current.success("Trade deleted");
-        notify();
       } catch (e) {
         toastRef.current.error(e instanceof Error ? e.message : "Failed to delete trade");
         throw e;
@@ -208,7 +246,7 @@ export function useData() {
         toastRef.current.remove(toastId);
       }
     },
-    [refreshTrades, notify],
+    [refreshTrades],
   );
 
   const createContent = useCallback(
@@ -223,7 +261,6 @@ export function useData() {
         if (!res.ok) throw new Error(await parseError(res));
         await refreshContent();
         toastRef.current.success("Content created");
-        notify();
       } catch (e) {
         toastRef.current.error(e instanceof Error ? e.message : "Failed to create content");
         throw e;
@@ -231,7 +268,7 @@ export function useData() {
         toastRef.current.remove(toastId);
       }
     },
-    [refreshContent, notify],
+    [refreshContent],
   );
 
   const updateContent = useCallback(
@@ -246,7 +283,6 @@ export function useData() {
         if (!res.ok) throw new Error(await parseError(res));
         await refreshContent();
         toastRef.current.success("Content updated");
-        notify();
       } catch (e) {
         toastRef.current.error(e instanceof Error ? e.message : "Failed to update content");
         throw e;
@@ -254,7 +290,7 @@ export function useData() {
         toastRef.current.remove(toastId);
       }
     },
-    [refreshContent, notify],
+    [refreshContent],
   );
 
   const deleteContent = useCallback(
@@ -265,7 +301,6 @@ export function useData() {
         if (!res.ok) throw new Error(await parseError(res));
         await refreshContent();
         toastRef.current.success("Content deleted");
-        notify();
       } catch (e) {
         toastRef.current.error(e instanceof Error ? e.message : "Failed to delete content");
         throw e;
@@ -273,7 +308,7 @@ export function useData() {
         toastRef.current.remove(toastId);
       }
     },
-    [refreshContent, notify],
+    [refreshContent],
   );
 
   return {

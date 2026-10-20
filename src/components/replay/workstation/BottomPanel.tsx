@@ -1,9 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
-import { BarChart3, NotebookPen, Scale, X } from "lucide-react";
-import { computeMetrics, METRIC_HELP } from "@/lib/replay/analytics";
+import { BarChart3, ChevronDown, ChevronUp, NotebookPen, Scale, X } from "lucide-react";
+import { METRIC_HELP } from "@/lib/replay/analytics";
 import type { ControllerSnapshot, NewCommand } from "@/lib/replay/controller";
 import { labelOf, type ApplyResult } from "@/lib/replay/engine";
 import { formatPrice } from "@/lib/replay/instruments";
@@ -13,7 +13,7 @@ import { cn } from "@/lib/utils";
 import { fmtPct, fmtR, money, parsePrice, tone } from "../format";
 import VirtualRows from "../VirtualRows";
 
-type Tab = "positions" | "orders" | "history" | "journal" | "performance" | "notes" | "log";
+type Tab = "positions" | "orders" | "history" | "journal" | "notes" | "log";
 
 function SideTag({ side }: { side: "buy" | "sell" }) {
   return (
@@ -55,11 +55,15 @@ export default function BottomPanel({
   onSubmit,
   onOpenJournal,
   onNotes,
+  collapsed,
+  onToggleCollapsed,
 }: {
   snap: ControllerSnapshot;
   onSubmit: (cmd: NewCommand) => ApplyResult;
   onOpenJournal: (tradeId: string) => void;
   onNotes: (notes: string) => void;
+  collapsed: boolean;
+  onToggleCollapsed: () => void;
 }) {
   const [tab, setTab] = useState<Tab>("positions");
   const { spec, session } = snap;
@@ -67,68 +71,101 @@ export default function BottomPanel({
   const tz = session.displayTimezone;
   const d = spec.digits;
 
-  const tabs: { id: Tab; label: string; count?: number }[] = [
-    { id: "positions", label: "Positions", count: snap.positions.length },
-    { id: "orders", label: "Orders", count: snap.orders.length },
-    { id: "history", label: "History", count: snap.trades.length },
+  const main: { id: Tab; label: string; count: number }[] = [
+    { id: "orders", label: "Pending", count: snap.orders.length },
+    { id: "positions", label: "Open", count: snap.positions.length },
+    { id: "history", label: "Closed", count: snap.trades.length },
+  ];
+  const extra: { id: Tab; label: string }[] = [
     { id: "journal", label: "Journal" },
-    { id: "performance", label: "Performance" },
     { id: "notes", label: "Notes" },
     { id: "log", label: "Log" },
   ];
+  const choose = (id: Tab) => {
+    setTab(id);
+    if (collapsed) onToggleCollapsed();
+  };
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="flex shrink-0 items-center gap-0.5 overflow-x-auto border-b border-border px-2 no-scrollbar" role="tablist">
-        {tabs.map((t) => (
+      <div className="flex shrink-0 items-center gap-1.5 overflow-x-auto px-1 pb-2 no-scrollbar" role="tablist" aria-label="Trades">
+        {main.map((t) => (
           <button
             key={t.id}
             type="button"
             role="tab"
             aria-selected={tab === t.id}
-            onClick={() => setTab(t.id)}
+            onClick={() => choose(t.id)}
             className={cn(
-              "relative shrink-0 px-2.5 py-2 text-xs font-medium transition-colors",
-              tab === t.id ? "text-foreground" : "text-muted hover:text-foreground",
+              "h-9 shrink-0 rounded-full px-4 text-[13px] font-semibold transition-colors",
+              tab === t.id ? "bg-accent text-accent-foreground" : "bg-card text-foreground/85 ring-1 ring-border hover:text-foreground",
             )}
           >
-            {t.label}
-            {t.count !== undefined && t.count > 0 && <span className="ml-1 rounded bg-surface-3 px-1 text-[10px] tabular-nums">{t.count}</span>}
-            {tab === t.id && <span className="absolute inset-x-2 -bottom-px h-0.5 rounded-full bg-accent" />}
+            {t.label} ({t.count})
           </button>
         ))}
+        <span className="mx-1 h-5 w-px shrink-0 bg-border" aria-hidden />
+        {extra.map((t) => (
+          <button
+            key={t.id}
+            type="button"
+            role="tab"
+            aria-selected={tab === t.id}
+            onClick={() => choose(t.id)}
+            className={cn("h-9 shrink-0 rounded-full px-3 text-[13px] font-medium transition-colors", tab === t.id ? "bg-surface-3 text-foreground" : "text-muted hover:text-foreground")}
+          >
+            {t.label}
+          </button>
+        ))}
+        <div className="ml-auto flex shrink-0 items-center gap-1">
+          <Link href={`/replay/analytics?session=${session.id}`} className="flex h-9 w-9 items-center justify-center rounded-full bg-card text-muted ring-1 ring-border hover:text-foreground" title="Full analytics for this session" aria-label="Full analytics for this session">
+            <BarChart3 className="h-4 w-4" />
+          </Link>
+          <button
+            type="button"
+            onClick={onToggleCollapsed}
+            className="flex h-9 w-9 items-center justify-center rounded-full bg-card text-muted ring-1 ring-border hover:text-foreground"
+            aria-expanded={!collapsed}
+            aria-label={collapsed ? "Show trades panel" : "Hide trades panel"}
+            title={collapsed ? "Show trades panel" : "Hide trades panel"}
+            data-testid="bottom-toggle"
+          >
+            {collapsed ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+          </button>
+        </div>
       </div>
-      <div className="min-h-0 flex-1 overflow-auto text-xs">
-        {tab === "positions" && <PositionsTab snap={snap} onSubmit={onSubmit} onOpenJournal={onOpenJournal} />}
-        {tab === "orders" && <OrdersTab orders={snap.orders} digits={d} onSubmit={onSubmit} tz={tz} />}
-        {tab === "history" && <HistoryTab trades={snap.trades} digits={d} ccy={ccy} tz={tz} journal={session.journal} onOpenJournal={onOpenJournal} initialBalance={session.settings.initialBalance} />}
-        {tab === "journal" && <JournalTab snap={snap} onOpenJournal={onOpenJournal} />}
-        {tab === "performance" && <PerformanceTab snap={snap} />}
-        {tab === "notes" && (
-          <div className="h-full p-2">
-            <textarea
-              className="input h-full min-h-[80px] resize-none text-[0.8rem]"
-              placeholder="Session notes — market regime, observations, rules to test…"
-              value={session.notes}
-              onChange={(e) => onNotes(e.target.value)}
-              aria-label="Session notes"
-            />
-          </div>
-        )}
-        {tab === "log" && (
-          <ul className="divide-y divide-border">
-            {snap.log.length === 0 && <li className="px-3 py-6 text-center text-muted">No activity yet.</li>}
-            {[...snap.log].reverse().map((e, i) => (
-              <li key={i} className="flex items-center gap-3 px-3 py-1.5">
-                <span className="w-28 shrink-0 tabular-nums text-muted">{formatInTz(e.t, tz, "short")}</span>
-                <span className={cn("w-14 shrink-0 text-[10px] font-semibold uppercase", e.kind === "reject" ? "text-loss" : "text-faint")}>{e.kind}</span>
-                <span className="min-w-0 flex-1 truncate">{e.text}</span>
-                {e.amount !== undefined && <span className={cn("tabular-nums", tone(e.amount))}>{money(e.amount, ccy, { signed: true })}</span>}
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
+      {!collapsed && (
+        <div className="min-h-0 flex-1 overflow-auto rounded-2xl border border-border bg-card text-xs">
+          {tab === "positions" && <PositionsTab snap={snap} onSubmit={onSubmit} onOpenJournal={onOpenJournal} />}
+          {tab === "orders" && <OrdersTab orders={snap.orders} digits={d} onSubmit={onSubmit} tz={tz} />}
+          {tab === "history" && <HistoryTab trades={snap.trades} digits={d} ccy={ccy} tz={tz} journal={session.journal} onOpenJournal={onOpenJournal} initialBalance={session.settings.initialBalance} />}
+          {tab === "journal" && <JournalTab snap={snap} onOpenJournal={onOpenJournal} />}
+          {tab === "notes" && (
+            <div className="h-full p-2">
+              <textarea
+                className="input h-full min-h-[80px] resize-none text-[0.8rem]"
+                placeholder="Session notes — market regime, observations, rules to test…"
+                value={session.notes}
+                onChange={(e) => onNotes(e.target.value)}
+                aria-label="Session notes"
+              />
+            </div>
+          )}
+          {tab === "log" && (
+            <ul className="divide-y divide-border">
+              {snap.log.length === 0 && <li className="px-3 py-6 text-center text-muted">No activity yet.</li>}
+              {[...snap.log].reverse().map((e, i) => (
+                <li key={i} className="flex items-center gap-3 px-3 py-1.5">
+                  <span className="w-28 shrink-0 tabular-nums text-muted">{formatInTz(e.t, tz, "short")}</span>
+                  <span className={cn("w-14 shrink-0 text-[10px] font-semibold uppercase", e.kind === "reject" ? "text-loss" : "text-faint")}>{e.kind}</span>
+                  <span className="min-w-0 flex-1 truncate">{e.text}</span>
+                  {e.amount !== undefined && <span className={cn("tabular-nums", tone(e.amount))}>{money(e.amount, ccy, { signed: true })}</span>}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -136,7 +173,7 @@ export default function BottomPanel({
 function PositionsTab({ snap, onSubmit, onOpenJournal }: { snap: ControllerSnapshot; onSubmit: (c: NewCommand) => ApplyResult; onOpenJournal: (id: string) => void }) {
   const { spec, quote, session } = snap;
   const ccy = session.settings.accountCurrency;
-  if (!snap.positions.length) return <p className="px-3 py-6 text-center text-muted">No open positions. Use the order ticket to place a trade.</p>;
+  if (!snap.positions.length) return <p className="px-3 py-6 text-center text-muted">No open positions. Use + Place Order, the Buy/Sell buttons or a position tool.</p>;
   const unrealized = (p: Position) => {
     const exit = p.side === "buy" ? quote.bid : quote.ask;
     const dir = p.side === "buy" ? 1 : -1;
@@ -144,7 +181,7 @@ function PositionsTab({ snap, onSubmit, onOpenJournal }: { snap: ControllerSnaps
   };
   return (
     <table className="w-full min-w-[720px]">
-      <thead className="sticky top-0 bg-card text-[10px] uppercase tracking-wider text-muted">
+      <thead className="sticky top-0 z-10 bg-card text-[10px] uppercase tracking-wider text-muted">
         <tr className="border-b border-border">
           <th className="px-3 py-1.5 text-left font-semibold">Side</th>
           <th className="px-2 text-right font-semibold">Lots</th>
@@ -227,10 +264,10 @@ function PositionsTab({ snap, onSubmit, onOpenJournal }: { snap: ControllerSnaps
 }
 
 function OrdersTab({ orders, digits, onSubmit, tz }: { orders: PendingOrder[]; digits: number; onSubmit: (c: NewCommand) => ApplyResult; tz: string }) {
-  if (!orders.length) return <p className="px-3 py-6 text-center text-muted">No pending orders. Choose Limit or Stop in the ticket.</p>;
+  if (!orders.length) return <p className="px-3 py-6 text-center text-muted">No pending orders. Choose Limit or Stop in the order panel, or use a position drawing.</p>;
   return (
     <table className="w-full min-w-[620px]">
-      <thead className="sticky top-0 bg-card text-[10px] uppercase tracking-wider text-muted">
+      <thead className="sticky top-0 z-10 bg-card text-[10px] uppercase tracking-wider text-muted">
         <tr className="border-b border-border">
           <th className="px-3 py-1.5 text-left font-semibold">Type</th>
           <th className="px-2 text-right font-semibold">Lots</th>
@@ -289,14 +326,17 @@ function HistoryTab({
   onOpenJournal: (id: string) => void;
   initialBalance: number;
 }) {
-  const rows = [...trades].reverse();
+  const rows = useMemo(() => [...trades].reverse(), [trades]);
   // % gain/loss of each trade on the balance before it closed (exit order).
-  const pctById = new Map<string, number>();
-  let bal = initialBalance;
-  for (const t of [...trades].sort((a, b) => a.exitT - b.exitT)) {
-    pctById.set(t.id, bal > 0 ? (t.netPnl / bal) * 100 : 0);
-    bal += t.netPnl;
-  }
+  const pctById = useMemo(() => {
+    const m = new Map<string, number>();
+    let bal = initialBalance;
+    for (const t of [...trades].sort((a, b) => a.exitT - b.exitT)) {
+      m.set(t.id, bal > 0 ? (t.netPnl / bal) * 100 : 0);
+      bal += t.netPnl;
+    }
+    return m;
+  }, [trades, initialBalance]);
   return (
     <div className="min-w-[820px]">
       <VirtualRows
@@ -372,37 +412,5 @@ function JournalTab({ snap, onOpenJournal }: { snap: ControllerSnapshot; onOpenJ
         );
       })}
     </ul>
-  );
-}
-
-function PerformanceTab({ snap }: { snap: ControllerSnapshot }) {
-  const s = snap.session.settings;
-  const m = computeMetrics(snap.trades, s.initialBalance);
-  const ccy = s.accountCurrency;
-  const items: [string, string, string?][] = [
-    ["Closed trades", String(m.total)],
-    ["Win rate", fmtPct(m.winRate), m.winRate === null ? undefined : `${m.wins}W · ${m.losses}L · ${m.breakeven}BE`],
-    ["Net P&L", money(m.netPnl, ccy, { signed: true }), fmtPct(m.returnPct, 2, true)],
-    ["Profit factor", m.profitFactor !== null ? m.profitFactor.toFixed(2) : m.profitFactorNote === "no-losses" ? "No losses" : "—"],
-    ["Expectancy", fmtR(m.expectancyR), money(m.expectancyMoney, ccy, { signed: true }) + " / trade"],
-    ["Avg win / loss", `${money(m.avgWin, ccy)} / ${money(m.avgLoss, ccy)}`],
-    ["Max drawdown (closed)", money(m.maxDrawdown, ccy), fmtPct(m.maxDrawdownPct, 2)],
-    ["Streaks", `${m.maxConsecWins}W / ${m.maxConsecLosses}L`],
-  ];
-  return (
-    <div className="p-3">
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-        {items.map(([label, value, sub]) => (
-          <div key={label} className="rounded-lg border border-border px-2.5 py-2">
-            <div className="text-[10px] font-semibold uppercase tracking-wider text-muted">{label}</div>
-            <div className="mt-0.5 text-sm font-semibold">{value}</div>
-            {sub && <div className="text-[10.5px] text-muted">{sub}</div>}
-          </div>
-        ))}
-      </div>
-      <Link href={`/replay/analytics?session=${snap.session.id}`} className="btn btn-secondary btn-sm mt-3">
-        <BarChart3 className="h-3.5 w-3.5" /> Full analytics for this session
-      </Link>
-    </div>
   );
 }

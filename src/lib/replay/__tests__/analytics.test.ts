@@ -3,6 +3,8 @@ import {
   byWeekday,
   computeMetrics,
   cumulativeR,
+  dailyPerformance,
+  monthlyReturns,
   drawdownStats,
   enrichTrades,
   equityCurve,
@@ -158,5 +160,56 @@ describe("filters", () => {
     expect(m.total).toBe(2);
     expect(m.winRate).toBe(0);
     expect(m.netPnl).toBe(-200);
+  });
+});
+
+describe("daily performance", () => {
+  it("groups by UTC exit day with counts and a running total", () => {
+    const trades = [...sample(), trade({ id: "F", netPnl: 50, exitT: D1 + 3600 }), trade({ id: "G", netPnl: -20, exitT: D1 + 11 * 3600 + 59 * 60 })];
+    const days = dailyPerformance(trades);
+    expect(days.map((d) => d.day)).toEqual(["2024-03-04", "2024-03-05", "2024-03-06", "2024-03-07", "2024-03-08"]);
+    expect(days[0]).toMatchObject({ net: 230, count: 3, wins: 2, losses: 1, cumulative: 230 });
+    expect(days[1]).toMatchObject({ net: -100, count: 1, cumulative: 130 });
+    expect(days[4]).toMatchObject({ net: 0, count: 1, wins: 0, losses: 0, cumulative: 330 });
+    expect(days[0].t).toBe(Date.UTC(2024, 2, 4) / 1000);
+  });
+
+  it("is empty without trades", () => {
+    expect(dailyPerformance([])).toEqual([]);
+  });
+});
+
+describe("monthly returns", () => {
+  it("are % of the balance at the start of each month; years compound", () => {
+    const at = (y: number, m: number, d: number) => Date.UTC(y, m - 1, d, 12) / 1000;
+    const trades = [
+      trade({ id: "a", netPnl: 100, exitT: at(2024, 1, 5) }),
+      trade({ id: "b", netPnl: 100, exitT: at(2024, 1, 20) }),
+      trade({ id: "c", netPnl: -102, exitT: at(2024, 2, 7) }),
+      trade({ id: "d", netPnl: 504.9, exitT: at(2025, 1, 3) }),
+    ];
+    const { months, years } = monthlyReturns(trades, 10_000);
+    expect(months.map((m) => m.month)).toEqual(["2024-01", "2024-02", "2025-01"]);
+    expect(months[0]).toMatchObject({ net: 200, count: 2, startBalance: 10_000 });
+    expect(months[0].pct).toBeCloseTo(2, 9);
+    expect(months[1].startBalance).toBe(10_200);
+    expect(months[1].pct).toBeCloseTo(-1, 9);
+    expect(months[2].startBalance).toBe(10_098);
+    expect(months[2].pct).toBeCloseTo(5, 9);
+    expect(years[0]).toMatchObject({ year: "2024", net: 98, count: 3, startBalance: 10_000 });
+    expect(years[0].pct).toBeCloseTo(0.98, 9);
+    // 2024's months compound to the year's figure.
+    expect((1 + months[0].pct! / 100) * (1 + months[1].pct! / 100) - 1).toBeCloseTo(years[0].pct! / 100, 9);
+    expect(years[1].pct).toBeCloseTo(5, 9);
+  });
+
+  it("orders by exit time, not input order, and handles no trades", () => {
+    const at = (m: number) => Date.UTC(2024, m - 1, 10) / 1000;
+    const { months } = monthlyReturns([trade({ id: "x", netPnl: -500, exitT: at(3) }), trade({ id: "y", netPnl: 1000, exitT: at(1) })], 10_000);
+    expect(months.map((m) => [m.month, m.startBalance])).toEqual([
+      ["2024-01", 10_000],
+      ["2024-03", 11_000],
+    ]);
+    expect(monthlyReturns([], 10_000)).toEqual({ months: [], years: [] });
   });
 });

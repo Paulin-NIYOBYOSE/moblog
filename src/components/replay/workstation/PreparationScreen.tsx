@@ -3,8 +3,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { AlertTriangle, ArrowLeft, Check, CloudDownload, Loader2, RotateCcw, X } from "lucide-react";
-import { prepareData, type DataJob } from "@/lib/replay/dataClient";
-import type { PipelineProgress, PipelineResult, Stage } from "@/lib/replay/marketData";
+import { prepareData, type DataJob, type DataPart } from "@/lib/replay/dataClient";
+import { sessionDataRequests, type PipelineProgress, type PipelineResult, type Stage } from "@/lib/replay/marketData";
 import { FXCM } from "@/lib/replay/providers/fxcm";
 import type { ReplaySession } from "@/lib/replay/types";
 import { cn } from "@/lib/utils";
@@ -44,6 +44,7 @@ export default function PreparationScreen({
   onReady: (r: PipelineResult, report: { phase: (p: Phase) => void; load: (l: LoadProgress) => void }) => Promise<void>;
 }) {
   const [progress, setProgress] = useState<PipelineProgress | null>(null);
+  const [part, setPart] = useState(0);
   const [result, setResult] = useState<PipelineResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [phase, setPhase] = useState<Phase>("pipeline");
@@ -52,6 +53,15 @@ export default function PreparationScreen({
   const job = useRef<DataJob | null>(null);
   const started = useRef(false);
   const resolution = session.source?.resolution ?? "M1";
+  const parts: DataPart[] = (() => {
+    const { fine, context } = sessionDataRequests(session);
+    return context
+      ? [
+          { label: `${resolution === "M1" ? "1-minute" : resolution} data from ${fmt(fine.fromT)} (replay + recent history)`, request: fine },
+          { label: `Older history as hourly candles, ${fmt(context.fromT)} → ${fmt(context.toT)}`, request: context },
+        ]
+      : [{ label: `${resolution === "M1" ? "1-minute" : resolution} data`, request: fine }];
+  })();
 
   const finish = async (r: PipelineResult) => {
     setPhase("validate");
@@ -67,7 +77,11 @@ export default function PreparationScreen({
     setError(null);
     setResult(null);
     setProgress(null);
-    const j = prepareData({ provider: "fxcm", symbol: session.symbol, resolution, fromT: session.historyStartT, toT: session.endT }, setProgress);
+    setPart(0);
+    const j = prepareData(parts, (p, i) => {
+      setPart(i);
+      setProgress(p);
+    });
     job.current = j;
     j.promise
       .then(async (r) => {
@@ -82,7 +96,7 @@ export default function PreparationScreen({
         setError(e instanceof Error ? e.message : String(e));
       });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session, resolution]);
+  }, [session]);
 
 
   useEffect(() => {
@@ -139,6 +153,11 @@ export default function PreparationScreen({
         </ol>
 
         <div className="mt-5">
+          {parts.length > 1 && !initializing && (
+            <p className="mb-2 text-xs font-medium" data-testid="preparation-part">
+              Part {part + 1} of {parts.length}: {parts[part].label}
+            </p>
+          )}
           {phase === "load" && load ? (
             <div className="h-2 overflow-hidden rounded-full bg-surface-3" role="progressbar" aria-valuenow={Math.round((load.loaded / Math.max(1, load.total)) * 100)} aria-valuemin={0} aria-valuemax={100} aria-label="Candles loaded">
               <div className="h-full rounded-full bg-accent transition-all duration-300" style={{ width: `${(load.loaded / Math.max(1, load.total)) * 100}%` }} />

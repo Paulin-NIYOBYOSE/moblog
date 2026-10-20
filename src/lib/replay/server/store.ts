@@ -1,6 +1,7 @@
 import zlib from "node:zlib";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { aggregateToBars } from "../aggregate";
 import { allocBars, emptyBars, lowerBound, mergeBars, sliceBars } from "../bars";
 import { mergeQuality } from "../csv";
 import { resolveInstrument } from "../instruments";
@@ -283,6 +284,21 @@ export async function loadRangePacked(datasetId: string, fromT: number, toT: num
   });
   const parts = rows.filter((r) => r.data).map((r) => zlib.inflateRawSync(r.data!));
   return { buffer: Buffer.concat(parts), days: rows.length, bars: rows.reduce((s, r) => s + r.n, 0) };
+}
+
+/**
+ * Candles in [fromT, toT] aggregated to hourly, packed — the older chart
+ * history of imported datasets (years of 1-minute rows stay on the server).
+ */
+export async function loadHourlyPacked(datasetId: string, fromT: number, toT: number): Promise<{ buffer: Buffer; bars: number }> {
+  const ds = await prisma.replayDataset.findUnique({ where: { id: datasetId }, select: { timeframe: true, symbol: true } });
+  if (!ds) throw new StoreError("Dataset not found.", 404);
+  const base = await loadRange(datasetId, fromT, toT);
+  const tf = ds.timeframe as Timeframe;
+  const hourly = tf === "H1" ? base : aggregateToBars(base, tf, "H1", "utc");
+  if (!hourly.n) return { buffer: Buffer.alloc(0), bars: 0 };
+  const digits = resolveInstrument(ds.symbol)?.digits ?? 5;
+  return { buffer: Buffer.from(packBars(hourly, chooseScale(hourly, digits))), bars: hourly.n };
 }
 
 /** Decoded candles in [fromT, toT] — used for validation on the server. */

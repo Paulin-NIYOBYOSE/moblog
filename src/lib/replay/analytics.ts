@@ -346,6 +346,89 @@ export function monthlyPerformance(trades: TradeRecord[]): MonthCell[] {
   return Array.from(map.values()).sort((a, b) => a.month.localeCompare(b.month));
 }
 
+export interface MonthReturn {
+  month: string; // YYYY-MM
+  /** Net P&L of trades that closed this month. */
+  net: number;
+  count: number;
+  /** Realised balance before the month's first exit. */
+  startBalance: number;
+  /** Net as a % of the start balance (null when that balance isn't positive). */
+  pct: number | null;
+}
+
+export interface YearReturn {
+  year: string;
+  net: number;
+  count: number;
+  startBalance: number;
+  /** End balance ÷ start balance − 1, i.e. the months compounded. */
+  pct: number | null;
+}
+
+/**
+ * Monthly and yearly % returns on the realised balance (FX Replay style).
+ * Trades count in the month of their final exit (UTC), in exit order.
+ */
+export function monthlyReturns(trades: TradeRecord[], initialBalance: number): { months: MonthReturn[]; years: YearReturn[] } {
+  const months = new Map<string, MonthReturn>();
+  const years = new Map<string, YearReturn>();
+  let balance = initialBalance;
+  for (const t of sortByExit(trades)) {
+    const k = monthKeyUtc(t.exitT);
+    const y = k.slice(0, 4);
+    const m = months.get(k) ?? { month: k, net: 0, count: 0, startBalance: balance, pct: null };
+    const yr = years.get(y) ?? { year: y, net: 0, count: 0, startBalance: balance, pct: null };
+    m.net += t.netPnl;
+    m.count++;
+    yr.net += t.netPnl;
+    yr.count++;
+    months.set(k, m);
+    years.set(y, yr);
+    balance += t.netPnl;
+  }
+  const pct = (net: number, start: number) => (start > 0 ? (net / start) * 100 : null);
+  for (const m of months.values()) m.pct = pct(m.net, m.startBalance);
+  for (const y of years.values()) y.pct = pct(y.net, y.startBalance);
+  return { months: Array.from(months.values()), years: Array.from(years.values()) };
+}
+
+export interface DayCell {
+  /** UTC day of exit, YYYY-MM-DD. */
+  day: string;
+  /** 00:00 UTC of that day (seconds). */
+  t: number;
+  net: number;
+  count: number;
+  wins: number;
+  losses: number;
+  /** Running net P&L through the end of this day. */
+  cumulative: number;
+}
+
+/** Net P&L per UTC exit day (whole trades), with the running total — calendar and daily charts. */
+export function dailyPerformance(trades: TradeRecord[], beThresholdR = 0): DayCell[] {
+  const map = new Map<string, DayCell>();
+  for (const tr of trades) {
+    const t = Math.floor(tr.exitT / 86_400) * 86_400;
+    const day = new Date(t * 1000).toISOString().slice(0, 10);
+    const cell = map.get(day) ?? { day, t, net: 0, count: 0, wins: 0, losses: 0, cumulative: 0 };
+    cell.net += tr.netPnl;
+    cell.count++;
+    const o = outcomeOf(tr, beThresholdR);
+    if (o === "win") cell.wins++;
+    else if (o === "loss") cell.losses++;
+    map.set(day, cell);
+  }
+  const days = Array.from(map.values()).sort((a, b) => a.t - b.t);
+  let run = 0;
+  for (const d of days) {
+    run += d.net;
+    d.cumulative = run;
+  }
+  return days;
+}
+
 export interface Bin {
   label: string;
   from: number;

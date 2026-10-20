@@ -2,53 +2,43 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
-import { AlertTriangle, ArrowLeft, Flag, Loader2, NotebookPen, X } from "lucide-react";
+import { AlertTriangle, ArrowLeft, Flag, GripHorizontal, Loader2, NotebookPen, X } from "lucide-react";
 import Modal from "@/components/ui/Modal";
 import { useConfirm } from "@/components/ConfirmContext";
 import { useToast } from "@/components/ToastContext";
 import { ReplayController, type NewCommand, type RewindPlan } from "@/lib/replay/controller";
 import { duplicateSession, pinDataset } from "@/lib/replay/session";
 import { getDataset, getSession, saveSession, validateRange } from "@/lib/replay/storage/repo";
-import { planRequest, type PipelineResult } from "@/lib/replay/marketData";
+import { planRequest, sessionDataRequests, type PipelineResult } from "@/lib/replay/marketData";
+import { providerDatasetId } from "@/lib/replay/providers/fxcm";
 import PreparationScreen, { type LoadProgress, type Phase } from "./PreparationScreen";
 import { formatInTz, TF_SECONDS } from "@/lib/replay/time";
 import { labelOf } from "@/lib/replay/engine";
-import type { JournalEntry, ReplaySession } from "@/lib/replay/types";
+import type { DatasetMeta, Drawing, JournalEntry, ReplaySession, Side } from "@/lib/replay/types";
 import { notifyReplayChanged, useStrategies } from "@/lib/replay/useReplayData";
 import { cn } from "@/lib/utils";
 import ReplayChart, { isIdleTool, type ChartContextEvent, type ChartHandle, type DragTarget, type DrawTool, type OverlayAction, type PickTarget, type TicketPreview } from "../chart/ReplayChart";
-import DrawingSettingsBar from "./DrawingSettingsBar";
-import { DRAWING_TOOLS, TOOL_KEYS } from "./DrawingTools";
-import type { Drawing } from "@/lib/replay/types";
-import { newProjection } from "../chart/projection";
-import ChartContextMenu, { type ContextItem } from "./ChartContextMenu";
-import ProjectionOrderModal from "./ProjectionOrderModal";
+import { newProjection, projectionLevels } from "../chart/projection";
 import JournalEditor from "../JournalEditor";
 import BottomPanel from "./BottomPanel";
-import DrawingTools, { DRAW_COLORS } from "./DrawingTools";
-import OrderTicket, { AccountStrip } from "./OrderTicket";
+import ChartBottomBar, { type ScaleMode } from "./ChartBottomBar";
+import ChartContextMenu, { type ContextItem } from "./ChartContextMenu";
+import ChartTopBar from "./ChartTopBar";
+import WorkstationHeader from "./WorkstationHeader";
+import DrawingSettingsBar from "./DrawingSettingsBar";
+import DrawingTools from "./DrawingTools";
+import FavoritesBar from "./FavoritesBar";
+import IndicatorsDialog from "./IndicatorsDialog";
+import OrderPanel from "./OrderPanel";
 import SettingsModal from "./SettingsModal";
-import Toolbar from "./Toolbar";
+import StatsDrawer from "./StatsDrawer";
+import { readLocal, readLocalJson, useTerminalTheme, writeLocal } from "./terminal";
 import { applyPrice, deriveTicket, initialTicket, type TicketState } from "./ticket";
-
-function readNumber(key: string, fallback: number): number {
-  try {
-    const v = Number(localStorage.getItem(key));
-    return Number.isFinite(v) && v > 0 ? v : fallback;
-  } catch {
-    return fallback;
-  }
-}
-
-function writeNumber(key: string, v: number) {
-  try {
-    localStorage.setItem(key, String(v));
-  } catch {
-    // storage blocked — layout just won't persist
-  }
-}
+import { ALL_TOOLS, DEFAULT_FAVORITES, DRAW_COLORS, TOOL_KEYS } from "./toolIcons";
 
 export default function Workstation({ sessionId }: { sessionId: string }) {
+  // Terminal look first, so the chart reads the right colours and font when it's created.
+  useTerminalTheme();
   const [controller, setController] = useState<ReplayController | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [preparing, setPreparing] = useState<ReplaySession | null>(null);
@@ -56,12 +46,17 @@ export default function Workstation({ sessionId }: { sessionId: string }) {
   const ctrlRef = useRef<ReplayController | null>(null);
   const cancelledRef = useRef(false);
 
-  const open = useCallback(async (s: ReplaySession, onLoad?: (l: LoadProgress) => void) => {
-    const ctrl = await ReplayController.load(s, (loaded, total, bars) => {
-      const l = { loaded, total, bars };
-      if (onLoad) onLoad(l);
-      else if (!cancelledRef.current) setLoading(l);
-    });
+  const open = useCallback(async (s: ReplaySession, onLoad?: (l: LoadProgress) => void, dataset?: DatasetMeta | null) => {
+    const ctrl = await ReplayController.load(
+      s,
+      (loaded, total, bars) => {
+        const l = { loaded, total, bars };
+        if (onLoad) onLoad(l);
+        else if (!cancelledRef.current) setLoading(l);
+      },
+      undefined,
+      dataset,
+    );
     if (cancelledRef.current) {
       void ctrl.dispose();
       return;
@@ -77,16 +72,20 @@ export default function Workstation({ sessionId }: { sessionId: string }) {
       try {
         const s = await getSession(sessionId);
         if (!s) throw new Error("Session not found — it may have been deleted.");
+        let ds: DatasetMeta | undefined;
         if (s.source?.kind === "provider") {
           // Download or reuse the session's history first (never blocks on cached data).
-          const ds = await getDataset(s.datasetId);
-          const plan = planRequest({ provider: "fxcm", symbol: s.symbol, resolution: s.source.resolution ?? "M1", fromT: s.historyStartT, toT: s.endT }, ds, Date.now() / 1000);
-          if (plan.pending.length || !ds || !ds.count) {
+          const { fine, context } = sessionDataRequests(s);
+          const now = Date.now() / 1000;
+          ds = await getDataset(s.datasetId);
+          let needed = !ds || !ds.count || planRequest(fine, ds, now).pending.length > 0;
+          if (!needed && context) needed = planRequest(context, await getDataset(providerDatasetId(context)), now).pending.length > 0;
+          if (needed) {
             if (!cancelledRef.current) setPreparing(s);
             return;
           }
         }
-        await open(s);
+        await open(s, undefined, ds);
       } catch (e) {
         if (!cancelledRef.current) setError(e instanceof Error ? e.message : String(e));
       }
@@ -107,9 +106,9 @@ export default function Workstation({ sessionId }: { sessionId: string }) {
       if (!ds || !ds.count) throw new Error("No candles are available for this period — try another date range.");
       const inRange = ds.months.some((m) => m.lastT >= s.historyStartT && m.firstT <= s.endT);
       if (!inRange) throw new Error("The provider has no candles inside this session's period.");
-      // Real gap check of the stored candles for this session's period.
+      // Real gap check of the stored candles for this session's period (the base data).
       report.phase("validate");
-      const check = await validateRange(ds.id, s.historyStartT, s.endT, ds.timeframe);
+      const check = await validateRange(ds.id, sessionDataRequests(s).fine.fromT, s.endT, ds.timeframe);
       if (!check.bars) throw new Error("The provider has no candles inside this session's period.");
       const pinned = {
         ...pinDataset(s, ds),
@@ -118,7 +117,7 @@ export default function Workstation({ sessionId }: { sessionId: string }) {
       const { revision } = await saveSession(pinned);
       notifyReplayChanged();
       report.phase("load");
-      await open({ ...pinned, revision }, report.load);
+      await open({ ...pinned, revision }, report.load, ds);
       report.phase("init");
     },
     [sessionId, open],
@@ -153,22 +152,33 @@ export default function Workstation({ sessionId }: { sessionId: string }) {
   return <WorkstationInner controller={controller} />;
 }
 
+
 function WorkstationInner({ controller }: { controller: ReplayController }) {
   const snap = useSyncExternalStore(controller.subscribe, controller.getSnapshot, controller.getSnapshot);
   const toast = useToast();
   const confirm = useConfirm();
   const { strategies } = useStrategies();
   const chartHandle = useRef<ChartHandle>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
 
   const [ticket, setTicket] = useState<TicketState>(initialTicket);
   const [submitting, setSubmitting] = useState(false);
   const [tool, setTool] = useState<DrawTool>("cursor");
   const [idleTool, setIdleTool] = useState<DrawTool>("cursor");
-  const [stay, setStay] = useState(() => (typeof window === "undefined" ? false : readNumber("replay-stay", 0) === 1));
+  const [stay, setStay] = useState(() => readLocal("replay-stay", 0) === 1);
   const [drawColor] = useState(DRAW_COLORS[0]);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
-  const [rightW, setRightW] = useState(() => (typeof window === "undefined" ? 316 : readNumber("replay-right-w", 316)));
-  const [bottomCollapsed, setBottomCollapsed] = useState(() => (typeof window === "undefined" ? false : readNumber("replay-bottom-collapsed", 0) === 1));
+  const [indicatorsOpen, setIndicatorsOpen] = useState(false);
+  const [ticketOpen, setTicketOpen] = useState(() => readLocal("replay-order-open", 0) === 1);
+  const [statsOpen, setStatsOpen] = useState(false);
+  const [hideValues, setHideValues] = useState(() => readLocal("replay-hide-values", 0) === 1);
+  const [favorites, setFavorites] = useState<DrawTool[]>(() => readLocalJson<DrawTool[]>("replay-fav-tools", DEFAULT_FAVORITES));
+  const [favBar, setFavBar] = useState(() => readLocal("replay-fav-bar", 1) === 1);
+  const [bottomCollapsed, setBottomCollapsed] = useState(() => readLocal("replay-bottom-collapsed", 0) === 1);
+  const [bottomH, setBottomH] = useState(() => readLocal("replay-bottom-h", 230));
+  const [scaleMode, setScaleMode] = useState<ScaleMode>("normal");
+  const [autoScale, setAutoScale] = useState(true);
+  const [fullscreen, setFullscreen] = useState(false);
   // Drawing undo/redo history (drawings only — trading has its own rewind).
   const history = useRef<{ past: Drawing[][]; future: Drawing[][] }>({ past: [], future: [] });
   const [histCounts, setHistCounts] = useState({ past: 0, future: 0 });
@@ -176,21 +186,44 @@ function WorkstationInner({ controller }: { controller: ReplayController }) {
   const [selectedDrawing, setSelectedDrawing] = useState<string | null>(null);
   const [journalId, setJournalId] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [ticketOpen, setTicketOpen] = useState(true);
-  const [bottomH, setBottomH] = useState(() => (typeof window === "undefined" ? 240 : readNumber("replay-bottom-h", 240)));
   const [dismissedWarnings, setDismissedWarnings] = useState(false);
-  const [placing, setPlacing] = useState<string | null>(null);
-  const [ticketActive, setTicketActive] = useState(false);
   const [menu, setMenu] = useState<{ e: ChartContextEvent; items: (ContextItem | "divider")[] } | null>(null);
+  /** A position drawing just placed: ask whether to trade it. */
+  const [usePrompt, setUsePrompt] = useState<string | null>(null);
+  /** Position drawing currently filling the order panel (hidden behind the order preview). */
+  const [linkedDrawing, setLinkedDrawing] = useState<string | null>(null);
+  /** The ticket as it was before a drawing filled it — restored afterwards. */
+  const ticketBeforeDrawing = useRef<TicketState | null>(null);
 
+  const prefs = snap.session.chartPrefs ?? {};
   const derived = useMemo(() => deriveTicket(ticket, snap), [ticket, snap]);
   const preview: TicketPreview | null = useMemo(() => {
-    // Market tickets preview only while you're using the order panel; pending
-    // orders keep their preview so the entry line can be dragged on the chart.
-    const show = ticket.orderType !== "market" || (ticketActive && (derived.sl !== null || derived.tp !== null)) || pick !== null;
-    if (!show || snap.atEnd) return null;
-    return { side: ticket.side, entry: derived.pendingType ? derived.entry : null, sl: derived.sl, tp: derived.tp, lots: derived.sizing.lots };
-  }, [ticket.orderType, ticket.side, derived, snap.atEnd, ticketActive, pick]);
+    // The order preview is on the chart while the order panel is open.
+    if (!ticketOpen || snap.atEnd) return null;
+    if (!derived.pendingType && derived.sl === null && derived.tp === null) return null;
+    const linked = linkedDrawing ? snap.session.drawings.find((d) => d.id === linkedDrawing) : undefined;
+    const span = linked ? projectionLevels(linked) : null;
+    return { side: ticket.side, entry: derived.pendingType ? derived.entry : null, sl: derived.sl, tp: derived.tp, lots: derived.sizing.lots, fromT: span?.fromT, toT: span?.toT };
+  }, [ticketOpen, ticket.side, derived, snap.atEnd, linkedDrawing, snap.session.drawings]);
+
+  /** A drawing's levels only apply to that one order; then the usual ticket comes back. */
+  const unlinkDrawing = useCallback(() => {
+    const prev = ticketBeforeDrawing.current;
+    ticketBeforeDrawing.current = null;
+    if (prev) setTicket({ ...prev, note: "" });
+    setLinkedDrawing(null);
+  }, []);
+  const setOrderOpen = useCallback(
+    (v: boolean) => {
+      setTicketOpen(v);
+      writeLocal("replay-order-open", v ? 1 : 0);
+      if (!v) {
+        unlinkDrawing();
+        setPick(null);
+      }
+    },
+    [unlinkDrawing],
+  );
 
   // -------------------------------------------------------------------------
   // Drawings: every change is undoable
@@ -225,12 +258,13 @@ function WorkstationInner({ controller }: { controller: ReplayController }) {
   }, [controller]);
 
   const selected = selectedDrawing ? snap.session.drawings.find((d) => d.id === selectedDrawing) ?? null : null;
+  const lockAll = Boolean(prefs.lockDrawings);
   const deleteDrawing = useCallback(
     (id: string) => {
       const d = controller.session.drawings.find((q) => q.id === id);
       if (!d) return;
-      if (d.locked) {
-        toast.error("This drawing is locked — unlock it first.");
+      if (d.locked || controller.session.chartPrefs?.lockDrawings) {
+        toast.error(d.locked ? "This drawing is locked — unlock it first." : "Drawings are locked — unlock them in the left toolbar first.");
         return;
       }
       changeDrawings(controller.session.drawings.filter((q) => q.id !== id));
@@ -250,10 +284,16 @@ function WorkstationInner({ controller }: { controller: ReplayController }) {
     setTool(t);
     if (isIdleTool(t)) setIdleTool(t);
   };
-  const prefs = snap.session.chartPrefs ?? {};
+  const toggleFavorite = (t: DrawTool) => {
+    setFavorites((cur) => {
+      const next = cur.includes(t) ? cur.filter((x) => x !== t) : [...cur, t];
+      writeLocal("replay-fav-tools", JSON.stringify(next));
+      return next;
+    });
+  };
 
   // -------------------------------------------------------------------------
-  // Actions
+  // Orders
   // -------------------------------------------------------------------------
 
   const submit = useCallback(
@@ -276,11 +316,41 @@ function WorkstationInner({ controller }: { controller: ReplayController }) {
         : submit({ type: "market", side: ticket.side, lots, sl: derived.sl, tp: derived.tp, note: ticket.note, timeframe: tf });
       if (r.ok) {
         toast.success(derived.pendingType ? "Order placed" : `${ticket.side === "buy" ? "Bought" : "Sold"} ${lots.toFixed(2)} ${snap.spec.symbol}`);
-        setTicket((t) => ({ ...t, note: "" }));
+        // A position drawing used for this order becomes the order.
+        if (linkedDrawing) changeDrawings(controller.session.drawings.filter((d) => d.id !== linkedDrawing));
+        else setTicket((t) => ({ ...t, note: "" }));
+        setOrderOpen(false);
       }
     } finally {
       setSubmitting(false);
     }
+  };
+
+  /** Fill the order panel from a Long/Short position drawing (entry, stop, target). */
+  const orderFromDrawing = (id: string) => {
+    const d = controller.session.drawings.find((q) => q.id === id);
+    if (!d || (d.kind !== "long" && d.kind !== "short")) return;
+    const lv = projectionLevels(d);
+    const { quote, spec } = snap;
+    const ref = lv.side === "buy" ? quote.ask : quote.bid;
+    const atMarket = Math.abs(lv.entry - ref) <= 2 * spec.pipSize;
+    const orderType: TicketState["orderType"] = atMarket ? "market" : lv.side === "buy" ? (lv.entry < quote.ask ? "limit" : "stop") : lv.entry > quote.bid ? "limit" : "stop";
+    const f = (p: number) => p.toFixed(spec.digits);
+    if (!ticketBeforeDrawing.current) ticketBeforeDrawing.current = ticket;
+    setTicket((t) => ({ ...t, side: lv.side, orderType, entry: f(lv.entry), slMode: "price", sl: f(lv.sl), tpMode: "price", tp: f(lv.tp) }));
+    setLinkedDrawing(id);
+    setSelectedDrawing(null);
+    setUsePrompt(null);
+    setTicketOpen(true);
+    writeLocal("replay-order-open", 1);
+  };
+
+  const quickTrade = (side: Side) => {
+    const base = ticketBeforeDrawing.current ?? ticket;
+    ticketBeforeDrawing.current = null;
+    setLinkedDrawing(null);
+    setTicket({ ...base, side, orderType: "market" });
+    setOrderOpen(true);
   };
 
   const doRewind = useCallback(
@@ -335,7 +405,7 @@ function WorkstationInner({ controller }: { controller: ReplayController }) {
     else submit({ type: "modify-order", orderId: target.id, [target.field]: price });
   };
 
-  // Buttons drawn on the chart: ✕ on trade pills, Place order on projections.
+  // Buttons drawn on the chart: ✕ on trade pills.
   const onAction = (a: OverlayAction) => {
     switch (a.type) {
       case "close-position": {
@@ -351,7 +421,7 @@ function WorkstationInner({ controller }: { controller: ReplayController }) {
         if (submit({ type: "cancel", orderId: a.id }).ok) toast.success("Order cancelled");
         break;
       case "place-projection":
-        setPlacing(a.id);
+        orderFromDrawing(a.id);
         break;
       case "delete-drawing":
         deleteDrawing(a.id);
@@ -364,9 +434,10 @@ function WorkstationInner({ controller }: { controller: ReplayController }) {
     const proj = newProjection(kind, t, price, snap.spec, bars, TF_SECONDS[snap.session.timeframe]);
     changeDrawings([...controller.session.drawings, proj]);
     setSelectedDrawing(proj.id);
+    setUsePrompt(proj.id);
   };
 
-  /** Right-click menu: pending orders at the clicked price, sized and protected like the ticket. */
+  /** Right-click menu: pending orders at the clicked price, sized and protected like the order panel. */
   const menuItems = (e: ChartContextEvent): (ContextItem | "divider")[] => {
     const d = snap.spec.digits;
     const items: (ContextItem | "divider")[] = [];
@@ -396,16 +467,17 @@ function WorkstationInner({ controller }: { controller: ReplayController }) {
       run: () => changeDrawings([...controller.session.drawings, { id: `d_${Date.now().toString(36)}`, kind: "hline", points: [{ t: e.t, p: e.price }], color: drawColor }]),
     });
     if (e.drawingId) {
-      const d = controller.session.drawings.find((q) => q.id === e.drawingId);
-      if (d) {
+      const dr = controller.session.drawings.find((q) => q.id === e.drawingId);
+      if (dr) {
         // Drawing actions first when the right-click hit a drawing.
         const own: (ContextItem | "divider")[] = [
-          { label: d.locked ? "Unlock drawing" : "Lock drawing", icon: "line", run: () => updateDrawing({ ...d, locked: !d.locked }) },
-          { label: "Duplicate drawing", icon: "line", run: () => duplicateDrawing(d) },
-          { label: "Delete drawing", icon: "line", danger: true, run: () => deleteDrawing(d.id) },
+          ...(dr.kind === "long" || dr.kind === "short" ? [{ label: "Use as order", icon: dr.kind, run: () => orderFromDrawing(dr.id) } as ContextItem] : []),
+          { label: dr.locked ? "Unlock drawing" : "Lock drawing", icon: "line", run: () => updateDrawing({ ...dr, locked: !dr.locked }) },
+          { label: "Duplicate drawing", icon: "line", run: () => duplicateDrawing(dr) },
+          { label: "Delete drawing", icon: "line", danger: true, run: () => deleteDrawing(dr.id) },
           "divider",
         ];
-        setSelectedDrawing(d.id);
+        setSelectedDrawing(dr.id);
         return [...own, ...items];
       }
     }
@@ -429,6 +501,21 @@ function WorkstationInner({ controller }: { controller: ReplayController }) {
     a.click();
   };
 
+  const toggleFullscreen = () => {
+    if (document.fullscreenElement) void document.exitFullscreen();
+    else void rootRef.current?.requestFullscreen?.().catch(() => toast.error("Full screen isn't available in this browser."));
+  };
+  useEffect(() => {
+    const on = () => setFullscreen(Boolean(document.fullscreenElement));
+    document.addEventListener("fullscreenchange", on);
+    return () => document.removeEventListener("fullscreenchange", on);
+  }, []);
+
+  const orderFromDrawingRef = useRef(orderFromDrawing);
+  useEffect(() => {
+    orderFromDrawingRef.current = orderFromDrawing;
+  });
+
   // -------------------------------------------------------------------------
   // Keyboard shortcuts (ignored while typing)
   // -------------------------------------------------------------------------
@@ -449,11 +536,11 @@ function WorkstationInner({ controller }: { controller: ReplayController }) {
         e.preventDefault();
         void stepBack();
       } else if (e.key === "Enter" && selectedDrawing) {
-        // Enter on a selected Long/Short position tool opens "Place order".
+        // Enter on a selected Long/Short position fills the order panel from it.
         const d = controller.session.drawings.find((q) => q.id === selectedDrawing);
         if (d && (d.kind === "long" || d.kind === "short")) {
           e.preventDefault();
-          setPlacing(d.id);
+          orderFromDrawingRef.current(d.id);
         }
       } else if (e.key === "Escape") {
         setTool(idleTool);
@@ -484,7 +571,6 @@ function WorkstationInner({ controller }: { controller: ReplayController }) {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [controller, stepBack, selectedDrawing, idleTool, deleteDrawing, undo, redo]);
-
   // Flush unsaved work when the tab is hidden or closed.
   useEffect(() => {
     const onHide = () => {
@@ -505,19 +591,21 @@ function WorkstationInner({ controller }: { controller: ReplayController }) {
     };
   }, [controller]);
 
-  // Bottom panel resize.
+  // Bottom panel resize (drag the grip under the chart).
   const startResize = (e: React.PointerEvent) => {
     e.preventDefault();
     const startY = e.clientY;
-    const startH = bottomH;
-    const move = (ev: PointerEvent) => {
-      const h = Math.max(120, Math.min(window.innerHeight * 0.65, startH + (startY - ev.clientY)));
-      setBottomH(h);
-    };
+    const startH = bottomCollapsed ? 52 : bottomH;
+    const clamp = (y: number) => Math.max(120, Math.min(window.innerHeight * 0.6, startH + (startY - y)));
+    if (bottomCollapsed) {
+      setBottomCollapsed(false);
+      writeLocal("replay-bottom-collapsed", 0);
+    }
+    const move = (ev: PointerEvent) => setBottomH(clamp(ev.clientY));
     const up = (ev: PointerEvent) => {
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
-      writeNumber("replay-bottom-h", Math.max(120, Math.min(window.innerHeight * 0.65, startH + (startY - ev.clientY))));
+      writeLocal("replay-bottom-h", clamp(ev.clientY));
     };
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up);
@@ -531,10 +619,11 @@ function WorkstationInner({ controller }: { controller: ReplayController }) {
   };
 
   const warnings = snap.warnings;
+  const activeIndicators = snap.session.indicators.filter((i) => i.visible).length;
 
   return (
-    <div className="fixed inset-0 z-40 flex flex-col overflow-y-auto bg-background lg:overflow-hidden" data-testid="replay-workstation">
-      <Toolbar
+    <div ref={rootRef} className="fixed inset-0 z-40 flex flex-col overflow-y-auto bg-background text-foreground lg:overflow-hidden" data-testid="replay-workstation">
+      <WorkstationHeader
         snap={snap}
         onTogglePlay={() => controller.togglePlay()}
         onStep={() => controller.stepForward()}
@@ -542,67 +631,116 @@ function WorkstationInner({ controller }: { controller: ReplayController }) {
         onBack={() => void stepBack()}
         onRestart={() => void restart()}
         onSpeed={(s) => controller.setSpeed(s)}
-        onTimeframe={(tf) => controller.setTimeframe(tf)}
-        onJump={jump}
         onRename={(n) => controller.rename(n)}
-        onIndicators={(list) => controller.setIndicators(list)}
-        onTimezone={(tz) => controller.setDisplayTimezone(tz)}
-        onScreenshot={screenshot}
+        onStats={() => setStatsOpen((v) => !v)}
+        statsOpen={statsOpen}
         onSettings={() => setSettingsOpen(true)}
-        ticketOpen={ticketOpen}
-        onToggleTicket={() => setTicketOpen((v) => !v)}
-        onSave={() => void controller.save().then((ok) => (ok ? toast.success("Session saved") : toast.error(controller.getSnapshot().saveError ?? "Save failed")))}
+        onHelp={() => setShortcutsOpen(true)}
+        hideValues={hideValues}
+        onHideValues={(v) => {
+          setHideValues(v);
+          writeLocal("replay-hide-values", v ? 1 : 0);
+        }}
       />
 
-      {warnings.length > 0 && !dismissedWarnings && (
-        <div className="flex shrink-0 items-start gap-2 border-b border-warning/30 bg-warning-soft px-3 py-1.5 text-xs text-warning">
-          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-          <div className="flex-1 space-y-0.5">
-            {warnings.map((w) => (
-              <p key={w}>{w}</p>
-            ))}
-          </div>
-          <button type="button" onClick={() => setDismissedWarnings(true)} aria-label="Dismiss warnings">
-            <X className="h-3.5 w-3.5" />
-          </button>
+      {(warnings.length > 0 && !dismissedWarnings) || snap.saveState === "error" ? (
+        <div className="space-y-1.5 px-3 pb-2 sm:px-4">
+          {warnings.length > 0 && !dismissedWarnings && (
+            <div className="flex items-start gap-2 rounded-xl border border-warning/30 bg-warning-soft px-3 py-1.5 text-xs text-warning">
+              <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              <div className="flex-1 space-y-0.5">
+                {warnings.map((w) => (
+                  <p key={w}>{w}</p>
+                ))}
+              </div>
+              <button type="button" onClick={() => setDismissedWarnings(true)} aria-label="Dismiss warnings">
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          )}
+          {snap.saveState === "error" && (
+            <div className="flex items-center gap-2 rounded-xl border border-loss/30 bg-loss-soft px-3 py-1.5 text-xs text-loss" role="alert">
+              <AlertTriangle className="h-3.5 w-3.5" /> {snap.saveError}
+            </div>
+          )}
         </div>
-      )}
-      {snap.saveState === "error" && (
-        <div className="flex shrink-0 items-center gap-2 border-b border-loss/30 bg-loss-soft px-3 py-1.5 text-xs text-loss" role="alert">
-          <AlertTriangle className="h-3.5 w-3.5" /> {snap.saveError}
-        </div>
-      )}
+      ) : null}
 
-      {/* Phones: sections stack at natural height and the page scrolls. Desktop: fixed workstation. */}
-      <div className="flex shrink-0 flex-col lg:min-h-0 lg:flex-1 lg:shrink lg:flex-row">
-        <div className="flex min-w-0 flex-col lg:min-h-0 lg:flex-1">
-          <div className="flex h-[58vh] min-h-[320px] shrink-0 flex-col lg:h-auto lg:min-h-0 lg:flex-1 lg:shrink lg:flex-row">
-            <DrawingTools
-              tool={tool}
-              onTool={chooseTool}
-              stay={stay}
-              onStay={(v) => {
-                setStay(v);
-                writeNumber("replay-stay", v ? 1 : 0);
-              }}
-              canUndo={histCounts.past > 0}
-              canRedo={histCounts.future > 0}
-              onUndo={undo}
-              onRedo={redo}
-              hidden={Boolean(prefs.hideDrawings)}
-              onHidden={(v) => controller.setChartPrefs({ hideDrawings: v })}
-              shading={Boolean(prefs.sessionShading)}
-              onShading={(v) => controller.setChartPrefs({ sessionShading: v })}
-              selectionLocked={selected ? Boolean(selected.locked) : null}
-              onToggleLock={() => selected && updateDrawing({ ...selected, locked: !selected.locked })}
-              onDeleteSelected={() => selectedDrawing && deleteDrawing(selectedDrawing)}
-              onClearAll={async () => {
-                const ok = await confirm({ title: "Remove all drawings", message: `Remove all ${snap.session.drawings.length} drawings from this session? You can undo this.`, confirmText: "Remove", destructive: true });
-                if (ok) changeDrawings([]);
-              }}
-              onShortcuts={() => setShortcutsOpen(true)}
-              count={snap.session.drawings.length}
-            />
+      {/* Phones: sections stack and the page scrolls. Desktop: a fixed terminal. */}
+      <div className="relative flex shrink-0 flex-col gap-3 px-3 sm:px-4 lg:min-h-0 lg:flex-1 lg:shrink lg:flex-row">
+        <section className="relative flex h-[68vh] min-h-[380px] min-w-0 flex-col overflow-hidden rounded-2xl border border-border bg-card lg:h-auto lg:min-h-0 lg:flex-1" aria-label="Chart">
+          <ChartTopBar
+            snap={snap}
+            center={favBar ? <FavoritesBar favorites={favorites} tool={tool} onTool={chooseTool} /> : null}
+            onTimeframe={(tf) => controller.setTimeframe(tf)}
+            onIndicators={() => setIndicatorsOpen(true)}
+            activeIndicators={activeIndicators}
+            onPlaceOrder={() => {
+              unlinkDrawing();
+              setOrderOpen(true);
+            }}
+            onJump={jump}
+            canUndo={histCounts.past > 0}
+            canRedo={histCounts.future > 0}
+            onUndo={undo}
+            onRedo={redo}
+            onSave={() => void controller.save().then((ok) => (ok ? toast.success("Session saved") : toast.error(controller.getSnapshot().saveError ?? "Save failed")))}
+            onTimezone={(tz) => controller.setDisplayTimezone(tz)}
+            shading={Boolean(prefs.sessionShading)}
+            onShading={(v) => controller.setChartPrefs({ sessionShading: v })}
+            autoScroll={prefs.autoScroll !== false}
+            onAutoScroll={(v) => controller.setChartPrefs({ autoScroll: v })}
+            pastTrades={Boolean(prefs.pastTrades)}
+            onPastTrades={(v) => controller.setChartPrefs({ pastTrades: v })}
+            tradeLabels={Boolean(prefs.tradeLabels)}
+            onTradeLabels={(v) => controller.setChartPrefs({ tradeLabels: v })}
+            fullscreen={fullscreen}
+            onFullscreen={toggleFullscreen}
+            onScreenshot={screenshot}
+          />
+          <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
+            <div className="relative z-20 shrink-0 lg:border-r lg:border-border">
+              <DrawingTools
+                tool={tool}
+                onTool={chooseTool}
+                stay={stay}
+                onStay={(v) => {
+                  setStay(v);
+                  writeLocal("replay-stay", v ? 1 : 0);
+                }}
+                magnet={Boolean(prefs.magnet)}
+                onMagnet={(v) => controller.setChartPrefs({ magnet: v })}
+                lockAll={lockAll}
+                onLockAll={(v) => controller.setChartPrefs({ lockDrawings: v })}
+                hidden={Boolean(prefs.hideDrawings)}
+                onHidden={(v) => controller.setChartPrefs({ hideDrawings: v })}
+                onZoomIn={() => chartHandle.current?.zoomIn()}
+                onRemoveDrawings={async () => {
+                  const ok = await confirm({ title: "Remove all drawings", message: `Remove all ${snap.session.drawings.length} drawings from this session? You can undo this.`, confirmText: "Remove", destructive: true });
+                  if (ok) {
+                    changeDrawings([]);
+                    setSelectedDrawing(null);
+                  }
+                }}
+                onRemoveIndicators={() => controller.setIndicators(snap.session.indicators.map((i) => ({ ...i, visible: false, hidden: false })))}
+                indicatorCount={activeIndicators}
+                favorites={favorites}
+                onFavorite={toggleFavorite}
+                favBar={favBar}
+                onFavBar={(v) => {
+                  setFavBar(v);
+                  writeLocal("replay-fav-bar", v ? 1 : 0);
+                }}
+                drawings={snap.session.drawings}
+                selectedId={selectedDrawing}
+                onSelect={setSelectedDrawing}
+                onToggleLock={(id) => {
+                  const d = controller.session.drawings.find((q) => q.id === id);
+                  if (d) updateDrawing({ ...d, locked: !d.locked });
+                }}
+                onDelete={deleteDrawing}
+              />
+            </div>
             <div className="relative min-h-0 min-w-0 flex-1">
               <ReplayChart
                 controller={controller}
@@ -615,21 +753,64 @@ function WorkstationInner({ controller }: { controller: ReplayController }) {
                 preview={preview}
                 onDrag={onDrag}
                 selectedDrawingId={selectedDrawing}
-                onSelectDrawing={setSelectedDrawing}
+                onSelectDrawing={(id) => {
+                  setSelectedDrawing(id);
+                  if (id !== usePrompt) setUsePrompt(null);
+                }}
                 onAction={onAction}
                 onContextMenu={(e) => !snap.atEnd && setMenu({ e, items: menuItems(e) })}
                 onDrawingsChange={changeDrawings}
                 hideDrawings={Boolean(prefs.hideDrawings)}
                 sessionShading={Boolean(prefs.sessionShading)}
                 autoScroll={prefs.autoScroll !== false}
-                onAutoScroll={(v) => controller.setChartPrefs({ autoScroll: v })}
+                onAutoScaleChange={setAutoScale}
+                magnet={Boolean(prefs.magnet)}
+                pastTrades={Boolean(prefs.pastTrades)}
+                tradeLabels={Boolean(prefs.tradeLabels)}
+                lockAll={lockAll}
+                hiddenDrawingId={linkedDrawing}
+                onProjectionPlaced={(id) => setUsePrompt(id)}
+                onQuickTrade={quickTrade}
+                onIndicatorsChange={(list) => controller.setIndicators(list)}
+                onOpenIndicators={() => setIndicatorsOpen(true)}
                 handleRef={chartHandle}
               />
-              {selected && !prefs.hideDrawings && (
-                <DrawingSettingsBar drawing={selected} onChange={updateDrawing} onDuplicate={() => duplicateDrawing(selected)} onDelete={() => deleteDrawing(selected.id)} />
+              {selected && !prefs.hideDrawings && selected.id !== linkedDrawing && (
+                <DrawingSettingsBar
+                  key={selected.id}
+                  drawing={selected}
+                  onChange={updateDrawing}
+                  onDuplicate={() => duplicateDrawing(selected)}
+                  onDelete={() => deleteDrawing(selected.id)}
+                  onPlaceOrder={snap.atEnd ? undefined : () => orderFromDrawing(selected.id)}
+                />
+              )}
+              {usePrompt && usePrompt === selectedDrawing && !snap.atEnd && (
+                <div
+                  className="absolute bottom-12 left-1/2 z-20 w-[min(22rem,calc(100%-1rem))] -translate-x-1/2 animate-pop-in rounded-2xl border border-border bg-card/95 p-3 shadow-xl backdrop-blur"
+                  role="region"
+                  aria-label="Use this drawing?"
+                  data-testid="use-drawing-prompt"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <p className="text-sm font-semibold">Use this drawing?</p>
+                    <button type="button" onClick={() => setUsePrompt(null)} className="-m-1 rounded-md p-1 text-muted hover:bg-surface-2 hover:text-foreground" aria-label="Dismiss">
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                  <p className="mt-0.5 text-xs text-muted">Turn it into an order (entry, stop and target), or keep it as an annotation.</p>
+                  <div className="mt-2.5 flex justify-end gap-1.5">
+                    <button type="button" className="rounded-full px-3 py-1.5 text-xs font-semibold text-foreground/85 hover:bg-surface-2" onClick={() => setUsePrompt(null)} data-testid="use-drawing-annotation">
+                      Leave as annotation
+                    </button>
+                    <button type="button" className="rounded-full bg-accent px-3 py-1.5 text-xs font-semibold text-accent-foreground hover:bg-accent-2" onClick={() => orderFromDrawing(usePrompt)} data-testid="use-drawing-order">
+                      Use as order
+                    </button>
+                  </div>
+                </div>
               )}
               {snap.atEnd && (
-                <div className="absolute bottom-10 left-1/2 z-10 flex -translate-x-1/2 items-center gap-2 rounded-full border border-border bg-card/95 px-3 py-1.5 text-xs shadow-lg">
+                <div className="absolute bottom-12 left-1/2 z-10 flex -translate-x-1/2 items-center gap-2 rounded-full border border-border bg-card/95 px-3 py-1.5 text-xs shadow-lg">
                   <Flag className="h-3.5 w-3.5 text-accent" /> End of session range.
                   <Link href={`/replay/analytics?session=${snap.session.id}`} className="font-semibold text-accent hover:underline">
                     View analytics
@@ -638,82 +819,72 @@ function WorkstationInner({ controller }: { controller: ReplayController }) {
               )}
             </div>
           </div>
-          {!bottomCollapsed && (
-            <div className="hidden h-1.5 shrink-0 cursor-row-resize border-t border-border bg-surface hover:bg-accent/20 lg:block" onPointerDown={startResize} role="separator" aria-orientation="horizontal" aria-label="Resize bottom panel" />
-          )}
-          <div className={cn("relative shrink-0 border-t border-border bg-card", bottomCollapsed ? "h-9 overflow-hidden" : "h-[320px] lg:h-[var(--bottom-h)] lg:border-t-0")} style={{ "--bottom-h": `${bottomH}px` } as React.CSSProperties}>
-            <button
-              type="button"
-              className="absolute right-2 top-1.5 z-10 hidden rounded-md bg-card px-2 py-0.5 text-[11px] font-medium text-muted hover:bg-surface-2 hover:text-foreground lg:block"
-              onClick={() => {
-                setBottomCollapsed((v) => {
-                  writeNumber("replay-bottom-collapsed", v ? 0 : 1);
-                  return !v;
-                });
-              }}
-              aria-expanded={!bottomCollapsed}
-              data-testid="bottom-toggle"
-            >
-              {bottomCollapsed ? "Show panel ▴" : "Hide ▾"}
-            </button>
-            <BottomPanel snap={snap} onSubmit={submit} onOpenJournal={openJournal} onNotes={(n) => controller.setNotes(n)} />
+          <ChartBottomBar
+            snap={snap}
+            onRange={(days) => chartHandle.current?.setVisibleDays(days)}
+            onJump={jump}
+            onTimezone={(tz) => controller.setDisplayTimezone(tz)}
+            scaleMode={scaleMode}
+            onScaleMode={(m) => {
+              setScaleMode(m);
+              chartHandle.current?.setScaleMode(m);
+            }}
+            autoScale={autoScale}
+            onAutoScale={(v) => {
+              setAutoScale(v);
+              chartHandle.current?.setAutoScale(v);
+            }}
+          />
+          <div className="hidden h-3 shrink-0 cursor-row-resize items-center justify-center text-faint hover:text-foreground lg:flex" onPointerDown={startResize} role="separator" aria-orientation="horizontal" aria-label="Resize the trades panel" title="Drag to resize the trades panel">
+            <GripHorizontal className="h-3.5 w-3.5" />
           </div>
-        </div>
+        </section>
 
         {ticketOpen && (
-          <div
-            className="hidden w-1.5 shrink-0 cursor-col-resize border-l border-border bg-surface hover:bg-accent/20 lg:block"
-            role="separator"
-            aria-orientation="vertical"
-            aria-label="Resize order panel"
-            onPointerDown={(e) => {
-              e.preventDefault();
-              const startX = e.clientX;
-              const startW = rightW;
-              const clamp = (w: number) => Math.max(280, Math.min(520, w));
-              const move = (ev: PointerEvent) => setRightW(clamp(startW + (startX - ev.clientX)));
-              const up = (ev: PointerEvent) => {
-                window.removeEventListener("pointermove", move);
-                window.removeEventListener("pointerup", up);
-                writeNumber("replay-right-w", clamp(startW + (startX - ev.clientX)));
-              };
-              window.addEventListener("pointermove", move);
-              window.addEventListener("pointerup", up);
-            }}
-          />
+          <aside className="flex min-h-[520px] w-full shrink-0 flex-col overflow-hidden rounded-2xl border border-border bg-card lg:min-h-0 lg:w-[340px]" aria-label="Order panel">
+            <OrderPanel
+              snap={snap}
+              ticket={ticket}
+              derived={derived}
+              onChange={setTicket}
+              onSubmit={placeOrder}
+              onClose={() => setOrderOpen(false)}
+              submitting={submitting}
+              pick={pick}
+              onPick={(p) => {
+                setTool("cursor");
+                setPick(p);
+              }}
+              onRiskChange={(patch) => controller.updatePreferences(patch)}
+              fromDrawing={linkedDrawing !== null}
+            />
+          </aside>
         )}
-        <aside className={cn("w-full shrink-0 space-y-3 border-t border-border bg-surface p-3 lg:w-[var(--right-w)] lg:overflow-y-auto lg:border-t-0", !ticketOpen && "lg:hidden")} style={{ "--right-w": `${rightW}px` } as React.CSSProperties} aria-label="Order panel"
-          onMouseEnter={() => setTicketActive(true)}
-          onMouseLeave={() => setTicketActive(false)}
-          onFocus={() => setTicketActive(true)}
-          onBlur={(e) => {
-            if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setTicketActive(false);
-          }}
-        >
-          <AccountStrip snap={snap} />
-          <OrderTicket
-            snap={snap}
-            ticket={ticket}
-            derived={derived}
-            onChange={setTicket}
-            onSubmit={placeOrder}
-            submitting={submitting}
-            pick={pick}
-            onPick={(p) => {
-              setTool("cursor");
-              setPick(p);
-            }}
-            onRiskChange={(patch) => controller.updatePreferences(patch)}
-          />
-          <p className="border-t border-border pt-2 text-[10px] leading-snug text-faint">
-            Charts by{" "}
-            <a href="https://www.tradingview.com/" target="_blank" rel="noopener noreferrer" className="underline">
-              TradingView
-            </a>{" "}
-            Lightweight Charts™. Data: {controller.dataset.provider ? "FXCM historical candles (personal use)" : "your imported files"}, stored in your database.
-          </p>
-        </aside>
+
+        {statsOpen && (
+          <div className="fixed inset-x-3 bottom-3 top-16 z-40 overflow-hidden rounded-2xl border border-border bg-card shadow-2xl sm:inset-x-auto sm:right-4 sm:w-[380px] lg:absolute lg:bottom-0 lg:right-4 lg:top-0">
+            <StatsDrawer snap={snap} onClose={() => setStatsOpen(false)} hideValues={hideValues} />
+          </div>
+        )}
       </div>
+
+      <div className={cn("shrink-0 px-3 pb-3 pt-2 sm:px-4", bottomCollapsed ? "lg:h-[56px]" : "h-[340px] lg:h-[var(--bottom-h)]")} style={{ "--bottom-h": `${bottomH}px` } as React.CSSProperties}>
+        <BottomPanel
+          snap={snap}
+          onSubmit={submit}
+          onOpenJournal={openJournal}
+          onNotes={(n) => controller.setNotes(n)}
+          collapsed={bottomCollapsed}
+          onToggleCollapsed={() => {
+            setBottomCollapsed((v) => {
+              writeLocal("replay-bottom-collapsed", v ? 0 : 1);
+              return !v;
+            });
+          }}
+        />
+      </div>
+
+      <IndicatorsDialog open={indicatorsOpen} onClose={() => setIndicatorsOpen(false)} indicators={snap.session.indicators} onChange={(list) => controller.setIndicators(list)} />
 
       <Modal open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} title="Keyboard shortcuts" size="md">
         <div className="grid gap-x-6 gap-y-1.5 text-sm sm:grid-cols-2" data-testid="shortcuts">
@@ -726,10 +897,10 @@ function WorkstationInner({ controller }: { controller: ReplayController }) {
               ["Ctrl/⌘ + Z", "Undo drawing change"],
               ["Ctrl/⌘ + Shift + Z", "Redo drawing change"],
               ["Delete", "Delete selected drawing"],
-              ["Enter", "Place order from selected position tool"],
+              ["Enter", "Use the selected position drawing as an order"],
               ["Esc", "Cancel tool / deselect"],
               ["Right-click", "Orders at a price · drawing menu"],
-              ...DRAWING_TOOLS.filter((t) => t.key).map((t) => [t.key!, t.label] as [string, string]),
+              ...ALL_TOOLS.filter((t) => t.key).map((t) => [t.key!, t.label] as [string, string]),
             ] as [string, string][]
           ).map(([k, v]) => (
             <div key={k} className="flex items-center justify-between gap-3 border-b border-border/60 py-1">
@@ -771,23 +942,6 @@ function WorkstationInner({ controller }: { controller: ReplayController }) {
       </Modal>
 
       {menu && <ChartContextMenu x={menu.e.clientX} y={menu.e.clientY} title={`At ${menu.e.price.toFixed(snap.spec.digits)}`} items={menu.items} onClose={() => setMenu(null)} />}
-      {placing && snap.session.drawings.some((d) => d.id === placing) && (
-        <ProjectionOrderModal
-          snap={snap}
-          drawing={snap.session.drawings.find((d) => d.id === placing)!}
-          onClose={() => setPlacing(null)}
-          onSubmit={(cmd) => {
-            const r = submit(cmd);
-            if (r.ok) {
-              // The projection becomes the live position/order.
-              changeDrawings(controller.session.drawings.filter((d) => d.id !== placing));
-              setSelectedDrawing(null);
-              toast.success(cmd.type === "market" ? "Order filled" : "Order placed");
-            }
-            return r;
-          }}
-        />
-      )}
       {settingsOpen && (
         <SettingsModal
           open

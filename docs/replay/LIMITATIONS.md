@@ -13,6 +13,9 @@
 - **Downloads go through the server.** On serverless hosting each week has to
   finish inside the function limit (`maxDuration` 60 s). An M1 week file is
   about 100 KB compressed, so this is normally fine.
+- **Long history is hourly.** History more than ~3 months before the start
+  is loaded as hourly candles, so it shows only on 1h and higher timeframes.
+  Lower timeframes start about 3 months before the replay.
 - **Bid-only imports** (HistData, MetaTrader) model the ask with your spread.
   FXCM and tick imports have recorded spreads.
 - **Database size:** one year of M1 for one pair is about 2.4 MB in

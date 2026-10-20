@@ -177,10 +177,18 @@ const WINDOW = 31 * 86_400;
  * Candles in [fromT, toT], fetched in month-sized windows (4 in parallel) so
  * long sessions stream in with progress instead of one huge response.
  */
-export async function loadBars(datasetId: string, fromT: number, toT: number, opts: { onProgress?: (loadedWindows: number, totalWindows: number, bars: number) => void; signal?: AbortSignal } = {}): Promise<Bars> {
+export async function loadBars(
+  datasetId: string,
+  fromT: number,
+  toT: number,
+  opts: { onProgress?: (loadedWindows: number, totalWindows: number, bars: number) => void; signal?: AbortSignal; /** Aggregate to hourly on the server. */ hourly?: boolean } = {},
+): Promise<Bars> {
   if (!(toT >= fromT)) return emptyBars();
   const windows: [number, number][] = [];
-  for (let a = fromT; a <= toT; a += WINDOW) windows.push([a, Math.min(toT, a + WINDOW - 1)]);
+  const size = opts.hourly ? 365 * 86_400 : WINDOW;
+  // Hourly windows start on the hour so no hour is split between two requests.
+  const start = opts.hourly ? Math.floor(fromT / 3600) * 3600 : fromT;
+  for (let a = start; a <= toT; a += size) windows.push([a, Math.min(toT, a + size - 1)]);
   const parts: Bars[] = new Array(windows.length);
   let next = 0;
   let done = 0;
@@ -191,7 +199,7 @@ export async function loadBars(datasetId: string, fromT: number, toT: number, op
       const [a, b] = windows[k];
       let res: Response;
       try {
-        res = await fetch(`${BASE}/datasets/${encodeURIComponent(datasetId)}/candles?from=${a}&to=${b}`, { credentials: "same-origin", signal: opts.signal });
+        res = await fetch(`${BASE}/datasets/${encodeURIComponent(datasetId)}/candles?from=${a}&to=${b}${opts.hourly ? "&tf=H1" : ""}`, { credentials: "same-origin", signal: opts.signal });
       } catch (e) {
         if (e instanceof DOMException && e.name === "AbortError") throw e;
         throw new ApiError("Couldn't reach the server while loading candles.", 0);

@@ -2,6 +2,7 @@
 
 import { aggregate, endOfCandle, startOfCandle, type ChartBar } from "./aggregate";
 import { indexAtOrBefore } from "./bars";
+import { CONTEXT_TF, historyPlan, showsContext, withContext } from "./history";
 import { ReplayEngine, type ApplyResult, type LedgerEvent, type Quote } from "./engine";
 import { resolveInstrument } from "./instruments";
 import { datasetChangedInRange, pruneJournal, resetSession, rewindImpact, truncateCommands } from "./session";
@@ -73,6 +74,8 @@ export interface ControllerSnapshot {
   /** Bumped whenever the chart must be fully redrawn (rewind, timeframe change). */
   chartEpoch: number;
   warnings: string[];
+  /** Older history loaded as hourly candles (shown on 1h and above), or null. */
+  context: { fromT: number; toT: number; bars: number } | null;
 }
 
 /**
@@ -81,6 +84,8 @@ export interface ControllerSnapshot {
  */
 export class ReplayController {
   readonly bars: Bars;
+  /** Hourly candles of the older history (chart only — never traded on). */
+  readonly context: Bars | null;
   readonly dataset: DatasetMeta;
   readonly spec: InstrumentSpec;
   readonly startIndex: number;
@@ -104,13 +109,17 @@ export class ReplayController {
   private saveError: string | null = null;
   private warnings: string[];
   private chart: { tf: Timeframe; upto: number; bars: ChartBar[]; reset: boolean } | null = null;
+  private contextCandles = new Map<string, ChartBar[]>();
+  /** Closed trades are append-only: reuse the snapshot's array until one is added (keeps memoised stats cheap while playing). */
+  private tradesView: { src: TradeRecord[]; n: number; out: TradeRecord[] } | null = null;
   private chartEpoch = 0;
   private disposed = false;
 
-  private constructor(session: ReplaySession, dataset: DatasetMeta, bars: Bars, spec: InstrumentSpec, warnings: string[]) {
+  private constructor(session: ReplaySession, dataset: DatasetMeta, bars: Bars, spec: InstrumentSpec, warnings: string[], context: Bars | null = null) {
     this.session = session;
     this.dataset = dataset;
     this.bars = bars;
+    this.context = context && context.n ? context : null;
     this.spec = spec;
     this.warnings = warnings;
     this.baseSec = TF_SECONDS[dataset.timeframe];
@@ -136,18 +145,31 @@ export class ReplayController {
     this.emit(true);
   }
 
-  static async load(session: ReplaySession, onProgress?: (loaded: number, total: number, bars: number) => void, signal?: AbortSignal): Promise<ReplayController> {
-    const dataset = await getDataset(session.datasetId);
+  /** `dataset` may be passed when the caller already fetched it (saves a round trip). */
+  static async load(session: ReplaySession, onProgress?: (loaded: number, total: number, bars: number) => void, signal?: AbortSignal, preloaded?: DatasetMeta | null): Promise<ReplayController> {
+    const dataset = preloaded && preloaded.id === session.datasetId ? preloaded : await getDataset(session.datasetId);
     if (!dataset) throw new Error("This session's dataset was deleted. Re-import the data (same symbol and timeframe) to reopen it.");
     if (dataset.missingCandles) throw new Error("This dataset was restored from a backup without candle data. Re-import the CSV to reopen the session.");
     const spec = resolveInstrument(session.symbol);
     if (!spec) throw new Error(`Unknown instrument ${session.symbol}.`);
-    const bars = await loadBars(dataset.id, session.historyStartT, session.endT, { onProgress, signal });
-    if (bars.n === 0) throw new Error("No candles found for this session's date range.");
     const warnings: string[] = [];
+    // Long history: ~3 months of base candles + older hourly candles for the chart.
+    const plan = historyPlan(session, dataset.timeframe, session.settings.dayBoundary);
+    const contextId = dataset.provider ? `fxcm_${session.symbol}_${CONTEXT_TF}` : dataset.id;
+    const [bars, context] = await Promise.all([
+      loadBars(dataset.id, plan.fineFromT, session.endT, { onProgress, signal }),
+      plan.context
+        ? loadBars(contextId, plan.context.fromT, plan.context.toT - 1, { hourly: true, signal }).catch((e) => {
+            if (e instanceof DOMException && e.name === "AbortError") throw e;
+            warnings.push(`The older history (before ${new Date(plan.context!.toT * 1000).toISOString().slice(0, 10)}) couldn't be loaded: ${e instanceof Error ? e.message : String(e)}`);
+            return null;
+          })
+        : Promise.resolve(null),
+    ]);
+    if (bars.n === 0) throw new Error("No candles found for this session's date range.");
     const changed = datasetChangedInRange(session, dataset);
     if (changed.length) warnings.push(`Dataset months ${changed.join(", ")} changed since this session was created; results are recomputed on the current data.`);
-    return new ReplayController(session, dataset, bars, spec, warnings);
+    return new ReplayController(session, dataset, bars, spec, warnings, context);
   }
 
   // -------------------------------------------------------------------------
@@ -199,7 +221,7 @@ export class ReplayController {
         }),
       ),
       orders: st.orders.map((o) => ({ ...o })),
-      trades: st.trades.slice(),
+      trades: this.tradesSnapshot(st.trades),
       log: st.log.slice(-200),
       balance: st.balance,
       equity,
@@ -217,6 +239,7 @@ export class ReplayController {
       exactConversion: this.engine.exactConversion,
       chartEpoch: this.chartEpoch,
       warnings: this.warnings.slice(),
+      context: this.context ? { fromT: this.context.t[0], toT: this.bars.t[0], bars: this.context.n } : null,
     };
     for (const l of this.listeners) l();
   }
@@ -235,16 +258,36 @@ export class ReplayController {
     const boundary = this.session.settings.dayBoundary;
     const c = this.chart;
     if (c && c.tf === tf && c.upto === upto) return { bars: c.bars, reset: c.reset };
-    if (c && c.tf === tf && upto > c.upto && c.bars.length) {
+    if (c && c.tf === tf && upto > c.upto && c.bars.length && c.bars[c.bars.length - 1].first >= 0) {
       const last = c.bars[c.bars.length - 1];
       const tail = aggregate(this.bars, this.dataset.timeframe, tf, boundary, upto, last.first);
       const next = c.bars.slice(0, -1).concat(tail);
       this.chart = { tf, upto, bars: next, reset: false };
       return { bars: next, reset: false };
     }
-    const bars = aggregate(this.bars, this.dataset.timeframe, tf, boundary, upto);
+    const bars = withContext(this.contextFor(tf, boundary), aggregate(this.bars, this.dataset.timeframe, tf, boundary, upto));
     this.chart = { tf, upto, bars, reset: true };
     return { bars, reset: true };
+  }
+
+  private tradesSnapshot(src: TradeRecord[]): TradeRecord[] {
+    const v = this.tradesView;
+    if (v && v.src === src && v.n === src.length) return v.out;
+    const out = src.slice();
+    this.tradesView = { src, n: src.length, out };
+    return out;
+  }
+
+  /** Older history as chart candles (1h and above only); complete candles, no base indices. */
+  private contextFor(tf: Timeframe, boundary: SessionSettings["dayBoundary"]): ChartBar[] {
+    if (!this.context || !showsContext(tf)) return [];
+    const key = `${tf}|${boundary}`;
+    let out = this.contextCandles.get(key);
+    if (!out) {
+      out = aggregate(this.context, CONTEXT_TF, tf, boundary).map((b) => ({ ...b, first: -1, last: -1, forming: false }));
+      this.contextCandles.set(key, out);
+    }
+    return out;
   }
 
   // -------------------------------------------------------------------------
@@ -403,7 +446,7 @@ export class ReplayController {
   }
 
   /** Settings that don't affect execution can change any time. */
-  updatePreferences(patch: Partial<Pick<SessionSettings, "riskMode" | "riskPercent" | "riskMoney" | "fixedLots" | "pauseOnFill">>) {
+  updatePreferences(patch: Partial<Pick<SessionSettings, "riskMode" | "riskPercent" | "riskMoney" | "fixedLots" | "pauseOnFill" | "riskBase">>) {
     this.session = { ...this.session, settings: { ...this.session.settings, ...patch } };
     this.markDirty();
     this.emit();

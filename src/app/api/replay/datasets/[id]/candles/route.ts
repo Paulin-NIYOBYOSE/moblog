@@ -1,19 +1,24 @@
 import zlib from "node:zlib";
 import { handle, json, num } from "@/lib/replay/server/http";
-import { loadRangePacked, StoreError, writeBars } from "@/lib/replay/server/store";
+import { loadHourlyPacked, loadRangePacked, StoreError, writeBars } from "@/lib/replay/server/store";
 import { unpackBars } from "@/lib/replay/pack";
 
 export const dynamic = "force-dynamic";
 type Ctx = { params: Promise<{ id: string }> };
 
-// GET ?from&to — packed candles (see lib/replay/pack.ts), gzip-encoded
+// GET ?from&to[&tf=H1] — packed candles (see lib/replay/pack.ts), gzip-encoded.
+// tf=H1 aggregates on the server (older chart history), up to a year per call.
 export async function GET(request: Request, { params }: Ctx) {
   return handle("GET candles", async () => {
     const u = new URL(request.url);
     const from = num(u.searchParams.get("from"));
     const to = num(u.searchParams.get("to"));
-    if (!(to >= from) || to - from > 40 * 86_400) throw new StoreError("Request at most 40 days of candles per call.");
-    const { buffer, days, bars } = await loadRangePacked((await params).id, from, to);
+    const tf = u.searchParams.get("tf");
+    if (tf !== null && tf !== "H1") throw new StoreError("Only tf=H1 is supported.");
+    const maxDays = tf ? 370 : 40;
+    if (!(to >= from) || to - from > maxDays * 86_400) throw new StoreError(`Request at most ${maxDays} days of candles per call.`);
+    const id = (await params).id;
+    const { buffer, days, bars } = tf ? { ...(await loadHourlyPacked(id, from, to)), days: 0 } : await loadRangePacked(id, from, to);
     const body = zlib.gzipSync(buffer, { level: 1 });
     return new Response(new Uint8Array(body), {
       headers: {
