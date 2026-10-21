@@ -8,6 +8,7 @@ import { ConfirmProvider } from "@/components/ConfirmContext";
 import { ThemeProvider } from "@/components/ThemeContext";
 import { useData } from "@/lib/useData";
 import AccountModal from "@/components/AccountModal";
+import Mt5SyncModal from "@/components/Mt5SyncModal";
 import type { Account, AccountInput } from "@/lib/types";
 import DashboardModals from "@/components/DashboardModals";
 import { useState } from "react";
@@ -43,6 +44,7 @@ function DashboardLayoutInner({
   const [accountModalOpen, setAccountModalOpen] = useState(false);
   const [editingAccount, setEditingAccount] = useState<Account | null>(null);
   const [deletingAccountId, setDeletingAccountId] = useState<string | null>(null);
+  const [mt5Account, setMt5Account] = useState<Account | null>(null);
 
   function openAddAccount() {
     setEditingAccount(null);
@@ -57,6 +59,11 @@ function DashboardLayoutInner({
   function closeAccountModal() {
     setAccountModalOpen(false);
     setEditingAccount(null);
+  }
+
+  function openMt5Sync(account: Account) {
+    closeAccountModal();
+    setMt5Account(account);
   }
 
   async function handleAccountSubmit(input: AccountInput) {
@@ -101,6 +108,7 @@ function DashboardLayoutInner({
         onAddAccount={openAddAccount}
         onEditAccount={openEditAccount}
         onDeleteAccount={handleDeleteAccount}
+        onSyncAccount={openMt5Sync}
         deletingAccountId={deletingAccountId}
       >
         {children}
@@ -114,6 +122,13 @@ function DashboardLayoutInner({
         onClose={closeAccountModal}
         onSubmit={handleAccountSubmit}
         onDelete={deleteAccount}
+        onConnectMt5={editingAccount ? () => openMt5Sync(editingAccount) : undefined}
+      />
+
+      <Mt5SyncModal
+        open={mt5Account !== null}
+        account={mt5Account}
+        onClose={() => setMt5Account(null)}
       />
     </ModalProvider>
   );

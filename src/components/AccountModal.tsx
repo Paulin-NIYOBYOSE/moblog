@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Loader2, Trash2, X } from "lucide-react";
+import { ChevronRight, Loader2, PlugZap, Trash2, X } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { CURRENCIES } from "@/lib/utils";
 import type { Account, AccountInput } from "@/lib/types";
@@ -14,12 +14,14 @@ export default function AccountModal({
   onClose,
   onSubmit,
   onDelete,
+  onConnectMt5,
 }: {
   open: boolean;
   account?: Account | null;
   onClose: () => void;
   onSubmit: (input: AccountInput) => Promise<void>;
   onDelete?: (id: string) => Promise<void>;
+  onConnectMt5?: () => void;
 }) {
   const [name, setName] = useState("");
   const [currency, setCurrency] = useState("USD");
@@ -162,6 +164,18 @@ export default function AccountModal({
               />
             </label>
           </div>
+          {isEdit && onConnectMt5 && (
+            <button
+              type="button"
+              onClick={onConnectMt5}
+              className="flex w-full items-center gap-2 rounded-lg border border-border bg-surface-2 px-3 py-2.5 text-left text-sm transition-colors hover:border-border-strong"
+            >
+              <PlugZap className="h-4 w-4 text-accent" />
+              <span className="flex-1 font-medium">MT5 auto-sync</span>
+              <span className="text-xs text-muted">{account?.mt5Connected ? "Connected" : "Set up"}</span>
+              <ChevronRight className="h-4 w-4 text-muted" />
+            </button>
+          )}
           {error && (
             <p className="rounded-lg bg-loss-soft px-3 py-2 text-sm text-loss">
               {error}

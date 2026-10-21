@@ -11,6 +11,11 @@ export async function proxy(req: NextRequest) {
     return NextResponse.next();
   }
 
+  // The MT5 expert advisor has no session; the route checks its sync key.
+  if (pathname === "/api/mt5/sync") {
+    return NextResponse.next();
+  }
+
   const token = req.cookies.get(SESSION_COOKIE)?.value;
   const session = await verifySessionToken(token);
   const isLoginPage = pathname === "/login";

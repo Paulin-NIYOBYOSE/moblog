@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { isAuthenticated } from "@/lib/serverAuth";
+import { toPublicAccount } from "@/lib/mt5/server";
 
 export const dynamic = "force-dynamic";
 
@@ -22,7 +23,7 @@ export async function PUT(request: Request, { params }: Params) {
     if (body.isArchived !== undefined) data.isArchived = Boolean(body.isArchived);
 
     const account = await prisma.account.update({ where: { id }, data });
-    return NextResponse.json(account);
+    return NextResponse.json(toPublicAccount(account));
   } catch (error) {
     console.error("PUT /api/accounts/:id failed:", error);
     return NextResponse.json({ error: "Failed to update account." }, { status: 500 });

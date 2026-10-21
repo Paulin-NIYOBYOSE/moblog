@@ -155,8 +155,12 @@ export default function TradeModal({
     try {
       const input: TradeInput = {
         accountId: activeAccount,
-        openDate: form.openDate,
-        closeDate: form.closeDate || null,
+        // Keep a synced trade's exact times unless its day was changed.
+        openDate: trade && form.openDate === trade.openDate.slice(0, 10) ? trade.openDate : form.openDate,
+        closeDate:
+          trade?.closeDate && form.closeDate === trade.closeDate.slice(0, 10)
+            ? trade.closeDate
+            : form.closeDate || null,
         pair,
         direction: (form.direction as Direction) || "LONG",
         exitLogic: form.exitLogic.trim() || null,
@@ -238,6 +242,12 @@ export default function TradeModal({
           onSubmit={handleSubmit}
           className="flex-1 overflow-y-auto px-5 py-4"
         >
+          {trade?.mt5Ticket && (
+            <p className="mb-4 rounded-lg bg-accent-soft px-3 py-2 text-xs text-accent">
+              Synced from MT5 (position #{trade.mt5Ticket}). Prices, size and P&amp;L update from MT5 on each sync;
+              your setup, comment and chart link are kept.
+            </p>
+          )}
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             {/* Account */}
             <div className="sm:col-span-2">

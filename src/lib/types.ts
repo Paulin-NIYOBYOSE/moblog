@@ -18,6 +18,11 @@ export interface Account {
   tradeCount?: number;
   netPnl?: number;
   balance?: number;
+  // MT5 auto-sync status (the connection key itself never leaves the server).
+  mt5Connected?: boolean;
+  mt5Login?: string | null;
+  mt5Server?: string | null;
+  mt5SyncedAt?: string | null;
 }
 
 // Shape returned by the API (dates serialized to ISO strings).
@@ -41,6 +46,7 @@ export interface Trade {
   setup: string | null;
   comment: string | null;
   chartUrl: string | null;
+  mt5Ticket?: string | null; // set on trades imported by the MT5 sync
   createdAt: string;
   updatedAt: string;
 }

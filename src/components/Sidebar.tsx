@@ -17,6 +17,7 @@ import {
   LogOut,
   NotebookPen,
   Pencil,
+  PlugZap,
   Plus,
   Rewind,
   Trash2,
@@ -91,6 +92,7 @@ export default function Sidebar({
   onAddAccount,
   onEditAccount,
   onDeleteAccount,
+  onSyncAccount,
   deletingAccountId,
   onLogout,
   mobileOpen,
@@ -103,6 +105,7 @@ export default function Sidebar({
   onAddAccount: () => void;
   onEditAccount: (account: Account) => void;
   onDeleteAccount: (account: Account) => void;
+  onSyncAccount: (account: Account) => void;
   deletingAccountId?: string | null;
   onLogout: () => void;
   mobileOpen?: boolean;
@@ -237,10 +240,23 @@ export default function Sidebar({
                             {pnl > 0 ? "▲" : "▼"}
                           </span>
                         )}
+                        {a.mt5Connected && (
+                          <span className="rounded bg-accent-soft px-1 text-[9px] font-semibold tracking-wide text-accent" title="Syncs from MT5">
+                            MT5
+                          </span>
+                        )}
                       </span>
                     </span>
                   </button>
                   <div className="flex shrink-0 items-center opacity-100 transition-opacity lg:opacity-0 lg:group-hover:opacity-100">
+                    <button
+                      type="button"
+                      onClick={() => onSyncAccount(a)}
+                      className="rounded-md p-1.5 text-muted transition-colors hover:bg-surface-3 hover:text-foreground"
+                      title="MT5 auto-sync"
+                    >
+                      <PlugZap className="h-3.5 w-3.5" />
+                    </button>
                     <button
                       type="button"
                       onClick={() => onEditAccount(a)}

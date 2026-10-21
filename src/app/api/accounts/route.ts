@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { isAuthenticated } from "@/lib/serverAuth";
+import { toPublicAccount } from "@/lib/mt5/server";
 
 export const dynamic = "force-dynamic";
 
@@ -28,7 +29,7 @@ async function withAggregates() {
   return accounts.map((a) => {
     const netPnl = pnlMap.get(a.id) ?? 0;
     return {
-      ...a,
+      ...toPublicAccount(a),
       netPnl,
       balance: a.startingBalance + netPnl,
       tradeCount: countMap.get(a.id) ?? 0,
@@ -72,7 +73,7 @@ export async function POST(request: Request) {
           : 0,
       },
     });
-    return NextResponse.json({ ...account, netPnl: 0, balance: account.startingBalance, tradeCount: 0 }, { status: 201 });
+    return NextResponse.json({ ...toPublicAccount(account), netPnl: 0, balance: account.startingBalance, tradeCount: 0 }, { status: 201 });
   } catch (error) {
     console.error("POST /api/accounts failed:", error);
     return NextResponse.json({ error: "Failed to create account." }, { status: 500 });

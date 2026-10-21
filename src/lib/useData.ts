@@ -318,6 +318,7 @@ export function useData() {
     loading,
     error,
     refresh,
+    refreshAccounts,
     refreshTrades,
     refreshContent,
     createAccount,

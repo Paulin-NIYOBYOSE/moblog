@@ -53,6 +53,15 @@ model Account {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
+  // MT5 auto-sync (src/lib/mt5): the MoblogSync expert advisor posts the
+  // terminal's deals with a per-account key — only its SHA-256 is stored.
+  // Login/server are recorded on the first sync so a key can't later feed
+  // a different MT5 account into this one.
+  mt5KeyHash  String?   @unique
+  mt5Login    String?
+  mt5Server   String?
+  mt5SyncedAt DateTime?
+
   trades         Trade[]
   journalEntries JournalEntry[]
 
@@ -90,9 +99,14 @@ model Trade {
   comment  String?
   chartUrl String? // link to a TradingView (or other) chart
 
+  // MT5 position ticket for trades imported by the sync — re-syncs update
+  // this row instead of adding a duplicate. Null for manually logged trades.
+  mt5Ticket String?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  @@unique([accountId, mt5Ticket])
   @@index([accountId, openDate])
   @@index([accountId, closeDate])
 }
