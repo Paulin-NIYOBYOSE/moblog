@@ -10,7 +10,7 @@ import { ReplayController, SPEEDS, type NewCommand, type RewindPlan } from "@/li
 import { duplicateSession, pinDataset } from "@/lib/replay/session";
 import { getDataset, getSession, saveSession, validateRange } from "@/lib/replay/storage/repo";
 import { planRequest, sessionDataRequests, type PipelineResult } from "@/lib/replay/marketData";
-import { providerDatasetId } from "@/lib/replay/providers/fxcm";
+import { providerDatasetId } from "@/lib/replay/providers";
 import PreparationScreen, { type LoadProgress, type Phase } from "./PreparationScreen";
 import { formatInTz, TF_SECONDS } from "@/lib/replay/time";
 import { labelOf } from "@/lib/replay/engine";

@@ -126,13 +126,30 @@ export interface DatasetMeta {
   provider?: ProviderCoverage;
 }
 
-export type ChunkStatus = "ok" | "missing" | "empty";
+/**
+ * ok: the complete trading week. partial: the fullest week any provider has
+ * (holiday weeks, or a provider still catching up). missing: no provider has
+ * it. empty: an FXCM file without candles, stored before Exness was added.
+ */
+export type ChunkStatus = "ok" | "partial" | "missing" | "empty";
 
-/** Which provider chunks (e.g. FXCM weekly files) are stored in the database. */
+/** Free archives that automatic history is downloaded from. */
+export type ProviderId = "fxcm" | "exness";
+
+export interface ChunkCoverage {
+  status: ChunkStatus;
+  n: number;
+  fetchedAt: number;
+  /** Provider whose candles are stored, or null when none had the week. */
+  source: ProviderId | null;
+  /** Providers asked for this week so far. */
+  tried: ProviderId[];
+}
+
+/** Which trading weeks are stored in the database, and from which provider. */
 export interface ProviderCoverage {
-  id: "fxcm";
   resolution: Timeframe;
-  chunks: Record<string, { status: ChunkStatus; n: number; fetchedAt: number }>;
+  chunks: Record<string, ChunkCoverage>;
 }
 
 export interface MonthChunk {
@@ -395,6 +412,7 @@ export interface SessionSummary {
 /** Where a session's candles come from. */
 export interface SessionSource {
   kind: "provider" | "import";
+  /** Always "fxcm" (the automatic history family, whichever archive filled each week). */
   provider?: "fxcm";
   resolution?: Timeframe;
 }

@@ -4,6 +4,7 @@ import { useState, type ReactNode } from "react";
 import { AlertTriangle, Camera, Check, CornerUpLeft, CornerUpRight, Loader2, Maximize, Minimize, MoveRight, Plus, Search, Settings } from "lucide-react";
 import ThemeToggle from "@/components/ThemeToggle";
 import type { ControllerSnapshot } from "@/lib/replay/controller";
+import { coverageLabel } from "@/lib/replay/providers";
 import { availableTimeframes, DISPLAY_TIMEZONES, formatInTz, fromInputValue, toInputValue } from "@/lib/replay/time";
 import type { Timeframe } from "@/lib/replay/types";
 import { cn } from "@/lib/utils";
@@ -160,7 +161,7 @@ export default function ChartTopBar({
             <div className="text-base font-semibold">{spec.symbol}</div>
             <dl className="grid grid-cols-2 gap-y-1 text-xs">
               <dt className="text-muted">Data</dt>
-              <dd className="text-right">{dataset.provider ? "FXCM historical candles" : dataset.name}</dd>
+              <dd className="text-right">{dataset.provider ? coverageLabel(dataset.provider, false) : dataset.name}</dd>
               <dt className="text-muted">Resolution</dt>
               <dd className="text-right">{dataset.timeframe}</dd>
               <dt className="text-muted">Prices</dt>

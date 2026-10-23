@@ -11,7 +11,8 @@ Implemented in `src/lib/replay/engine.ts`; every rule below has a unit test in
   bid = ask − spread. **Mid** or unknown: ± half the spread.
 - Spread: a fixed number of pips, or **recorded**, falling back to the fixed
   value where none was recorded. Recorded spreads come from three sources:
-  - FXCM downloads: the mean of each candle's open and close bid/ask spread
+  - automatic downloads: the mean of each candle's open and close bid/ask
+    spread (FXCM's, or the first and last Exness tick of the candle)
   - imported ticks: the per-minute average
   - a MetaTrader SPREAD column
 - Buy entries fill on the ask and sell entries on the bid. Longs exit on the

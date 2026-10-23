@@ -41,7 +41,7 @@ export default function ReplayNav() {
 export function ReplayFooter() {
   return (
     <footer className="mt-10 border-t border-border pt-4 text-xs text-faint">
-      Replay stores candles, sessions and journals in this app&apos;s own PostgreSQL database — no paid services or API keys. Market data: FXCM&apos;s free archive (personal use) and files you import.
+      Replay stores candles, sessions and journals in this app&apos;s own PostgreSQL database — no paid services or API keys. Market data: FXCM&apos;s free candle archive and Exness&apos;s free tick history (personal use), plus files you import.
       Charts by{" "}
       <a className="underline hover:text-muted" href="https://www.tradingview.com/" target="_blank" rel="noopener noreferrer">
         TradingView

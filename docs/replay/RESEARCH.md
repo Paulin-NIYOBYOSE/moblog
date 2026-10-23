@@ -9,7 +9,7 @@ The requirement was automatic history that is:
 - fetched without circumventing rate limits, CAPTCHAs or authentication
 - never fabricated
 
-## FXCM historical candles (used: automatic)
+## FXCM historical candles (used: automatic, first choice)
 
 - **Source:**
   - Documentation: [github.com/fxcm/MarketData](https://github.com/fxcm/MarketData)
@@ -44,6 +44,55 @@ The requirement was automatic history that is:
   - honouring `Retry-After`
 - **Terms:** FXCM publishes the data for personal use under its EULA. Replay
   stores it only in your own database and never redistributes it.
+- **Holes (checked October 2026).** The archive is incomplete in ways that
+  affect every pair, not one symbol:
+  - weeks that return 404 — for EURUSD 2024-W35, W51, W52, W53, 2025-W02,
+    W29, W30 and **all of 2026-W18 … W31** (May–August 2026)
+  - 0-byte files served with HTTP 200 — AUDCAD 2024-W51/W52, and the hourly
+    files AUDCAD 2024-W52 and 2025-W02
+  - files with only the header — AUDCAD 2022-W46, and 2023-W27 for both
+    EURUSD and AUDCAD
+  - files cut off after a few hours — 2025-W26 holds only Friday afternoon
+    (93–231 candles instead of ~7 180)
+
+  Before the Exness fallback, a 0-byte file was treated as a server error,
+  retried 5 times and then stopped the whole preparation; the other holes were
+  stored as gaps. A complete FXCM week holds 7 135–7 183 M1 candles with no
+  gap over 20 minutes (the daily rollover), so a week below 85 % of 7 200
+  minutes, or with a gap over 3 hours, is treated as incomplete.
+
+## Exness tick history (used: automatic, for the weeks FXCM lacks)
+
+- **Source:**
+  - Page: [exness.com/tick-history](https://www.exness.com/tick-history/)
+  - Files:
+    `https://ticks.ex2archive.com/ticks/{SYMBOL}/{YEAR}/{MM}/Exness_{SYMBOL}_{YEAR}_{MM}.zip`
+- **Format:** one ZIP per symbol and calendar month holding one CSV of every
+  quote: `"exness","EURUSD","2026-10-22 23:59:58.502Z",1.12208,1.12214`
+  (bid, ask, UTC). Sorted, no malformed rows or ask < bid in the files checked.
+- **Coverage:**
+  - from January 2016 (2015 and earlier return 404)
+  - the current month's file is rebuilt every day at about 01:40 UTC with
+    everything up to the previous midnight
+  - all of FXCM's 22 pairs (checked one by one), plus metals, indices and
+    crypto that Replay doesn't use yet
+- **Size:** 5–13 MB a month for an FX pair (48 MB of CSV for AUDCAD, Dec 2024);
+  XAUUSD is about 30 MB. Far heavier than FXCM's ~100 KB weeks, which is why
+  Exness is only the fallback.
+- **Quality, compared with FXCM:** for EURUSD 2024-W50 the minute closes
+  differ by 0.2 pip (median) and 0.5 pip (95th percentile), with no time
+  shift (an hour's shift raises the median to ~4.7 pips). Exness had the
+  complete AUDCAD 2024-W51 that FXCM serves as a 0-byte file (7 192 minutes).
+  Its spreads are wider (median 0.6 pip vs FXCM's 0.25 on EURUSD).
+- **Prices:** Replay builds bid OHLC candles from the ticks, with the spread
+  of each candle's first and last tick (as FXCM's open/close spreads). Minutes
+  without a tick have no candle, as with FXCM.
+- **Access:** public HTTPS on a CDN, no key, no login; `robots.txt` allows
+  everything. Each month file answered in about 1 s and downloaded in about
+  6 s. Replay downloads a month only for weeks FXCM can't serve, and keeps
+  the last three for 10 minutes so the other weeks of a month reuse them.
+- **Terms:** Exness describes the data as indicative and for information.
+  Replay stores it only in your own database and never redistributes it.
 
 ## Dukascopy (rejected for automatic use; manual export → import)
 
@@ -51,6 +100,11 @@ The requirement was automatic history that is:
   imports its CSVs.
 - The binary "datafeed" URLs that third-party tools use are undocumented.
   Fetching them from the server got throttled (503/429) after a few requests.
+- Re-tested in October 2026 as a possible fallback: one week of M1 needs 12
+  files (bid and ask per day). They took 10–75 s each, several timed out, and
+  the server answered 429 after about 35 requests. The data itself is good
+  (AUDCAD 2024-W51 was there), but this rate can't fill a week inside the
+  60 s request limit, and Exness covers the same weeks.
 - Dukascopy's own documentation for bulk historical data points to a paid
   (S3 Requester Pays) route.
 - Automating the datafeed would mean working around its throttling, so
@@ -96,6 +150,6 @@ must not circumvent.
 ## Limitations that can't be eliminated
 
 - M1 data can't reproduce the tick path inside a minute (see EXECUTION.md).
-- FXCM prices are indicative, not a record of fills at your broker.
+- FXCM and Exness prices are indicative, not a record of fills at your broker.
 - Free sources are not audited. Gaps and occasional bad ticks exist; Replay
   reports them but doesn't repair them.

@@ -85,7 +85,7 @@ export const PRESET_LABEL: Record<SourcePreset, string> = {
   "dukascopy-tick": "Dukascopy — ticks CSV",
   metatrader: "MetaTrader export",
   generic: "Generic CSV",
-  fxcm: "FXCM historical candles (automatic)",
+  fxcm: "Automatic download (FXCM + Exness)",
 };
 
 // ---------------------------------------------------------------------------

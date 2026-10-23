@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { isAuthenticated } from "@/lib/serverAuth";
-import { ProviderBusyError } from "./fxcmIngest";
+import { ProviderBusyError } from "./ingest";
 import { StoreError } from "./store";
 
 const NO_TABLES = "Replay's database tables don't exist yet. Run `npx prisma migrate deploy` (or `npm run db:deploy`) against your database, then reload.";

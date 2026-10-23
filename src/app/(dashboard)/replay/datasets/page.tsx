@@ -93,7 +93,7 @@ export default function DatasetsPage() {
           </>
         }
         title="Datasets"
-        subtitle="Historical candles stored in your database — downloaded automatically from FXCM or imported from files. Each session pins its dataset version so results stay reproducible."
+        subtitle="Historical candles stored in your database — downloaded automatically (FXCM, with Exness filling FXCM's gaps) or imported from files. Each session pins its dataset version so results stay reproducible."
         actions={
           <button type="button" className="btn btn-primary" onClick={() => setImportOpen(true)}>
             <FileUp className="h-4 w-4" /> Import data

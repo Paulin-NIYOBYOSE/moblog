@@ -191,7 +191,7 @@ export default function BackupCard() {
             checked={includeCandles}
             onChange={setIncludeCandles}
             label="Include imported candles"
-            description="Adds candles from files you imported (about 20 MB per year of M1). Downloaded FXCM data is never included — it re-downloads automatically."
+            description="Adds candles from files you imported (about 20 MB per year of M1). Automatically downloaded history is never included — it re-downloads automatically."
           />
           <div className="flex flex-wrap gap-2">
             <button type="button" className="btn btn-secondary" onClick={() => void doExport()} disabled={busy !== null}>

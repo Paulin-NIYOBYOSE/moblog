@@ -2,11 +2,11 @@ import zlib from "node:zlib";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { aggregateToBars } from "../aggregate";
-import { allocBars, emptyBars, lowerBound, mergeBars, sliceBars } from "../bars";
+import { allocBars, concatBars, emptyBars, lowerBound, mergeBars, sliceBars } from "../bars";
 import { mergeQuality } from "../csv";
 import { resolveInstrument } from "../instruments";
 import { chooseScale, packBars, unpackBars } from "../pack";
-import type { Bars, ChunkStatus, DatasetMeta, JournalEntry, MonthChunkInfo, PriceBasis, QualityReport, ReplaySession, SourcePreset, Timeframe } from "../types";
+import type { Bars, ChunkCoverage, ChunkStatus, DatasetMeta, JournalEntry, MonthChunkInfo, PriceBasis, ProviderId, QualityReport, ReplaySession, SourcePreset, Timeframe } from "../types";
 
 // Server-side persistence for Replay (PostgreSQL via Prisma). Candles are
 // stored one UTC day per row (packed int32 points, deflated); every write that
@@ -62,8 +62,12 @@ export function splitByDay(b: Bars): { day: string; bars: Bars }[] {
   return out;
 }
 
-function encodeDay(bars: Bars, minDigits: number): Uint8Array<ArrayBuffer> {
-  return new Uint8Array(zlib.deflateRawSync(packBars(bars, chooseScale(bars, minDigits)), { level: 6 }));
+function packDay(bars: Bars, minDigits: number): Uint8Array {
+  return packBars(bars, chooseScale(bars, minDigits));
+}
+
+function encodeDay(packed: Uint8Array): Uint8Array<ArrayBuffer> {
+  return new Uint8Array(zlib.deflateRawSync(packed, { level: 6 }));
 }
 
 function decodeDay(data: Uint8Array): Bars {
@@ -107,20 +111,22 @@ async function monthAggregates(ids: string[]): Promise<Map<string, MonthChunkInf
   return out;
 }
 
+type Coverage = { chunks: Record<string, ChunkCoverage>; quality: QualityReport };
+
 async function providerCoverage(ids: string[]) {
-  const out = new Map<string, { chunks: Record<string, { status: ChunkStatus; n: number; fetchedAt: number }>; quality: QualityReport }>();
+  const out = new Map<string, Coverage>();
   if (!ids.length) return out;
   const rows = await prisma.replayProviderChunk.findMany({ where: { datasetId: { in: ids } }, orderBy: { chunk: "asc" } });
   for (const r of rows) {
     const cur = out.get(r.datasetId) ?? { chunks: {}, quality: emptyQuality() };
-    cur.chunks[r.chunk] = { status: r.status as ChunkStatus, n: r.n, fetchedAt: r.fetchedAt.getTime() };
+    cur.chunks[r.chunk] = { status: r.status as ChunkStatus, n: r.n, fetchedAt: r.fetchedAt.getTime(), source: r.source as ProviderId | null, tried: r.tried as ProviderId[] };
     if (r.quality) cur.quality = mergeQuality(cur.quality, r.quality as unknown as QualityReport);
     out.set(r.datasetId, cur);
   }
   return out;
 }
 
-function toMeta(row: DatasetRow, months: MonthChunkInfo[], cov?: { chunks: Record<string, { status: ChunkStatus; n: number; fetchedAt: number }>; quality: QualityReport }): DatasetMeta {
+function toMeta(row: DatasetRow, months: MonthChunkInfo[], cov?: Coverage): DatasetMeta {
   const m = (row.meta ?? {}) as unknown as StoredMeta;
   const meta: DatasetMeta = {
     id: row.id,
@@ -143,7 +149,7 @@ function toMeta(row: DatasetRow, months: MonthChunkInfo[], cov?: { chunks: Recor
     derivedFromTicks: Boolean(m.derivedFromTicks),
     missingCandles: m.missingCandles || undefined,
   };
-  if (row.kind === "provider") meta.provider = { id: "fxcm", resolution: row.timeframe as Timeframe, chunks: cov?.chunks ?? {} };
+  if (row.kind === "provider") meta.provider = { resolution: row.timeframe as Timeframe, chunks: cov?.chunks ?? {} };
   return meta;
 }
 
@@ -232,34 +238,56 @@ export interface WriteResult {
   daysWritten: number;
 }
 
+/** Bars of `b` outside [fromT, toT]. */
+function withoutWindow(b: Bars, w: { fromT: number; toT: number }): Bars {
+  const from = lowerBound(b.t, b.n, w.fromT);
+  const to = lowerBound(b.t, b.n, w.toT + 1e-6);
+  return from === to ? b : concatBars([sliceBars(b, 0, from), sliceBars(b, to, b.n)]);
+}
+
 /**
  * Merge candles into a dataset (existing candles win on equal timestamps;
- * differing duplicates are counted as conflicts). Runs inside `tx`.
+ * differing duplicates are counted as conflicts). With `replace`, stored
+ * candles inside that window are replaced by `bars` instead — a provider
+ * week is always stored whole, from one provider. Runs inside `tx`.
  */
-async function writeBarsTx(tx: Prisma.TransactionClient, datasetId: string, symbol: string, bars: Bars): Promise<WriteResult> {
+async function writeBarsTx(tx: Prisma.TransactionClient, datasetId: string, symbol: string, bars: Bars, replace?: { fromT: number; toT: number }): Promise<WriteResult> {
   const spec = resolveInstrument(symbol);
   const minDigits = spec?.digits ?? 5;
-  const parts = splitByDay(bars);
+  const incoming = new Map(splitByDay(bars).map((p) => [p.day, p.bars]));
+  const days = new Set(incoming.keys());
+  if (replace) for (let d = Math.floor(replace.fromT / DAY) * DAY; d <= replace.toT; d += DAY) days.add(dayKeyOf(d));
   const res: WriteResult = { added: 0, duplicates: 0, conflicts: 0, daysWritten: 0 };
-  if (!parts.length) return res;
-  const existing = await tx.replayCandleDay.findMany({ where: { datasetId, day: { in: parts.map((p) => p.day) } } });
+  if (!days.size) return res;
+  const existing = await tx.replayCandleDay.findMany({ where: { datasetId, day: { in: [...days] } } });
   const byDay = new Map(existing.map((e) => [e.day, e]));
-  for (const p of parts) {
-    const prev = byDay.get(p.day);
-    let out = p.bars;
+  for (const day of [...days].sort()) {
+    const prev = byDay.get(day);
+    let out = incoming.get(day) ?? emptyBars();
     let rev = 1;
+    let packed: Uint8Array | null = null;
     if (prev?.data && prev.status === "ok") {
-      const merged = mergeBars(decodeDay(prev.data), p.bars);
+      const stored = decodeDay(prev.data);
+      const merged = mergeBars(replace ? withoutWindow(stored, replace) : stored, out);
       res.duplicates += merged.duplicates;
       res.conflicts += merged.conflicts;
-      if (merged.bars.n === prev.n) continue; // nothing new for this day
-      res.added += merged.bars.n - prev.n;
       out = merged.bars;
+      if (replace) {
+        packed = out.n ? packDay(out, minDigits) : null;
+        if (packed && Buffer.from(packed).equals(zlib.inflateRawSync(prev.data))) continue; // same candles as stored
+      } else if (out.n === prev.n) continue; // nothing new for this day
+      res.added += Math.max(0, out.n - prev.n);
       rev = prev.rev + 1;
-    } else res.added += out.n;
-    const data = encodeDay(out, minDigits);
+      if (!out.n) {
+        await tx.replayCandleDay.delete({ where: { datasetId_day: { datasetId, day } } });
+        res.daysWritten++;
+        continue;
+      }
+    } else if (!out.n) continue;
+    else res.added += out.n;
+    const data = encodeDay(packed ?? packDay(out, minDigits));
     const row = { status: "ok", n: out.n, firstT: out.t[0], lastT: out.t[out.n - 1], bytes: data.byteLength, data, rev, fetchedAt: new Date() };
-    await tx.replayCandleDay.upsert({ where: { datasetId_day: { datasetId, day: p.day } }, create: { datasetId, day: p.day, ...row }, update: row });
+    await tx.replayCandleDay.upsert({ where: { datasetId_day: { datasetId, day } }, create: { datasetId, day, ...row }, update: row });
     res.daysWritten++;
   }
   if (res.daysWritten) await tx.replayDataset.update({ where: { id: datasetId }, data: { version: { increment: 1 } } });
@@ -315,21 +343,29 @@ export async function loadRange(datasetId: string, fromT: number, toT: number): 
 
 export interface ChunkWrite {
   chunk: string;
+  /** Candle open times the week covers; stored candles inside it are replaced. */
+  window: { fromT: number; toT: number };
   status: ChunkStatus;
+  /** Provider of `bars`, or null when no provider had the week. */
+  source: ProviderId | null;
+  tried: ProviderId[];
   bytes: number;
   quality: QualityReport | null;
   bars: Bars;
 }
 
-/** Store a provider file's candles and its coverage record atomically. */
+/**
+ * Store a provider week's candles and its coverage record atomically. A week
+ * no provider had leaves any candles already stored for it untouched.
+ */
 export async function storeProviderChunk(datasetId: string, w: ChunkWrite): Promise<WriteResult> {
   const ds = await prisma.replayDataset.findUnique({ where: { id: datasetId }, select: { symbol: true } });
   if (!ds) throw new StoreError("Dataset not found.", 404);
   return prisma.$transaction(
     async (tx) => {
-      const res = w.bars.n ? await writeBarsTx(tx, datasetId, ds.symbol, w.bars) : { added: 0, duplicates: 0, conflicts: 0, daysWritten: 0 };
+      const res = w.bars.n ? await writeBarsTx(tx, datasetId, ds.symbol, w.bars, w.window) : { added: 0, duplicates: 0, conflicts: 0, daysWritten: 0 };
       const quality = w.quality ? ({ ...w.quality, duplicates: w.quality.duplicates + res.duplicates } as unknown as Prisma.InputJsonValue) : Prisma.JsonNull;
-      const row = { status: w.status, n: w.bars.n, bytes: w.bytes, quality, fetchedAt: new Date() };
+      const row = { status: w.status, n: w.bars.n, bytes: w.bytes, quality, source: w.source, tried: w.tried, fetchedAt: new Date() };
       await tx.replayProviderChunk.upsert({ where: { datasetId_chunk: { datasetId, chunk: w.chunk } }, create: { datasetId, chunk: w.chunk, ...row }, update: row });
       return res;
     },

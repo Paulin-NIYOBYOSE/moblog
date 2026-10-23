@@ -2,22 +2,32 @@
 
 ## Data
 
-- **Automatic downloads cover only FXCM's 22 FX pairs,** from 2012 to roughly 9
-  days ago, at M1 or H1. XAUUSD, other metals, indices, other pairs and older
-  history need a CSV import (e.g. HistData).
-- **FXCM depends on a third party.** If its archive changes or goes away,
+- **Automatic downloads cover only FXCM's 22 FX pairs,** from 2012 to the last
+  finished week, at M1 or H1. XAUUSD, other metals, indices, other pairs and
+  older history need a CSV import (e.g. HistData).
+- **Before 2016 FXCM is the only source.** Exness's archive starts in 2016, so
+  a week FXCM lacks before then stays a gap.
+- **Two providers, slightly different prices.** A week FXCM lacks comes from
+  Exness, whose prices are within ~0.2 pip of FXCM's (median, EURUSD) but
+  whose spreads are wider (~0.6 vs ~0.25 pip). Each week comes whole from one
+  provider, so a difference can only show across a weekend.
+- **Both providers are third parties.** If both archives change or go away,
   automatic downloads stop. Data already stored keeps working.
+- **Filling a gap costs more.** A week from Exness downloads its whole month
+  of ticks (5–13 MB for an FX pair); the next weeks of that month reuse it
+  while the server stays warm.
 - **The browser drives downloads.** They run while the preparation screen is
   open. Closing it stops after the current week, and reopening resumes from
   the stored weeks. There is no background job queue.
 - **Downloads go through the server.** On serverless hosting each week has to
-  finish inside the function limit (`maxDuration` 60 s). An M1 week file is
-  about 100 KB compressed, so this is normally fine.
+  finish inside the function limit (`maxDuration` 60 s). An FXCM week is about
+  100 KB and an Exness month a few MB, so this is normally fine; a week that
+  runs out of time is retried.
 - **Long history is hourly.** History more than ~3 months before the start
   is loaded as hourly candles, so it shows only on 1h and higher timeframes.
   Lower timeframes start about 3 months before the replay.
 - **Bid-only imports** (HistData, MetaTrader) model the ask with your spread.
-  FXCM and tick imports have recorded spreads.
+  Automatic downloads and tick imports have recorded spreads.
 - **Database size:** one year of M1 for one pair is about 2.4 MB in
   `ReplayCandleDay` (measured on real EURUSD). The wizard's estimate uses
   10 bytes per candle, so it errs high. On a free-tier hosted database,
@@ -61,4 +71,5 @@
   `npm run build:worker && npx next build`.
 - **Database tests need local PostgreSQL** binaries (see README). Without
   them, those tests are skipped.
-- **The real-data end-to-end test needs internet access** to reach FXCM.
+- **The real-data tests need internet access** to reach FXCM (end-to-end)
+  and both archives (`REPLAY_REAL_DATA=1`).

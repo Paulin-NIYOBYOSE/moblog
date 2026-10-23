@@ -5,14 +5,14 @@ import Link from "next/link";
 import { AlertTriangle, ArrowLeft, Check, CloudDownload, Loader2, RotateCcw, X } from "lucide-react";
 import { prepareData, type DataJob, type DataPart } from "@/lib/replay/dataClient";
 import { sessionDataRequests, type PipelineProgress, type PipelineResult, type Stage } from "@/lib/replay/marketData";
-import { FXCM } from "@/lib/replay/providers/fxcm";
-import type { ReplaySession } from "@/lib/replay/types";
+import { AUTO_TERMS, PROVIDERS } from "@/lib/replay/providers";
+import type { ProviderId, ReplaySession } from "@/lib/replay/types";
 import { cn } from "@/lib/utils";
 
 const STAGES: { label: string; detail?: string }[] = [
   { label: "Checking stored history", detail: "What the database already holds for this period" },
   { label: "Checking provider availability" },
-  { label: "Downloading missing weeks", detail: "Each week is validated and saved to the database as it arrives" },
+  { label: "Downloading missing weeks", detail: "Each week comes from FXCM, or from Exness where FXCM's archive has a gap, and is validated and saved as it arrives" },
   { label: "Checking the period for gaps" },
   { label: "Preparing the selected timeframe", detail: "Loading candles from the database" },
   { label: "Initializing the replay" },
@@ -222,6 +222,14 @@ export default function PreparationScreen({
                 {progress.rejected}
               </dd>
             </div>
+            {(Object.entries(progress.sources) as [ProviderId, number][]).map(([id, n]) => (
+              <div key={id} data-testid={`source-${id}`}>
+                <dt className="text-muted">From {PROVIDERS[id].short}</dt>
+                <dd className="font-semibold tabular-nums">
+                  {n} week{n === 1 ? "" : "s"}
+                </dd>
+              </div>
+            ))}
           </dl>
         )}
 
@@ -229,7 +237,7 @@ export default function PreparationScreen({
           <div className="mt-4 rounded-xl border border-warning/30 bg-warning-soft p-3 text-sm text-warning">
             <p className="flex items-start gap-2 font-medium">
               <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-              {result.missing.length} week{result.missing.length === 1 ? "" : "s"} have no published data and will show as gaps: {result.missing.slice(0, 6).join(", ")}
+              No provider has {result.missing.length} week{result.missing.length === 1 ? "" : "s"} of this period; {result.missing.length === 1 ? "it" : "they"} will show as gaps: {result.missing.slice(0, 6).join(", ")}
               {result.missing.length > 6 ? "…" : ""}
             </p>
             <p className="mt-1 text-xs">Nothing is filled in for them. You can continue with the available data.</p>
@@ -273,7 +281,15 @@ export default function PreparationScreen({
           )}
         </div>
         <p className="mt-4 border-t border-border pt-3 text-[11px] leading-snug text-faint">
-          Source: <a href={FXCM.homepage} target="_blank" rel="noopener noreferrer" className="underline">{FXCM.name}</a>. {FXCM.terms}
+          Sources:{" "}
+          <a href={PROVIDERS.fxcm.homepage} target="_blank" rel="noopener noreferrer" className="underline">
+            {PROVIDERS.fxcm.name}
+          </a>
+          , with weeks FXCM lacks built from{" "}
+          <a href={PROVIDERS.exness.homepage} target="_blank" rel="noopener noreferrer" className="underline">
+            {PROVIDERS.exness.name}
+          </a>
+          . {AUTO_TERMS}
         </p>
       </div>
     </div>

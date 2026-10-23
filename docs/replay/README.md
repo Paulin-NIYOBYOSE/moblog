@@ -6,7 +6,9 @@ candle, trading it with simulated orders, and measuring the results.
 - **Storage:** candles, sessions, trades, journals and settings are stored in
   the app's PostgreSQL database (Prisma), not in the browser.
 - **Data:** for 22 FX pairs, history is downloaded automatically from FXCM's
-  free public candle archive. For any other instrument, import your own CSV.
+  free public candle archive; any week FXCM is missing or has broken is built
+  from Exness's free tick history instead. For any other instrument, import
+  your own CSV.
 - **Cost:** no paid data, no API keys, no extra service.
 
 ## Routes
@@ -39,8 +41,8 @@ instead of failing silently.
 ## Quick start
 
 1. `/replay` → **Create session**.
-2. **Market:** pick a pair (e.g. EUR/USD). Pairs FXCM covers are marked
-   *Auto-download*. Anything else needs an imported dataset.
+2. **Market:** pick a pair (e.g. EUR/USD). Pairs with automatic history are
+   marked *Auto-download*. Anything else needs an imported dataset.
 3. **Period & timeframe:** pick a preset (30 days to 5 years) or custom
    dates, the chart timeframe (M1–D1), data resolution (M1, or H1 for long
    periods) and the **history before the start**: none, 1 week … 5 years
@@ -49,7 +51,8 @@ instead of failing silently.
    many will be downloaded, and the estimated candles and storage.
    - The last ~3 months of history use the session's own resolution (1-minute
      by default). Anything older loads as **hourly candles**: FXCM's hourly
-     files, or hourly candles built on the server from an imported dataset.
+     files (Exness ticks where FXCM has a gap), or hourly candles built on the
+     server from an imported dataset.
      Hourly history shows on 1h and higher timeframes (lower ones say where
      it starts).
    - It's only for reading the chart and indicators. The replay never trades
@@ -59,7 +62,7 @@ instead of failing silently.
 5. **Review → Start.** The preparation screen shows each stage:
    - checking stored history and provider availability
    - downloading missing weeks (live counts of weeks, candles, rejected rows,
-     retries and the current week)
+     weeks per provider, retries and the current week)
    - checking the period for gaps
    - preparing the timeframe
    - starting the replay
@@ -238,22 +241,30 @@ npm run build:worker       # rebuild public/replay-import.worker.js after editin
   `npm run test:e2e` can't start.
 - The real-data end-to-end test downloads one week of EURUSD from FXCM, so it
   needs internet access.
+- `REPLAY_REAL_DATA=1 npx vitest run src/lib/replay/__tests__/realData.test.ts`
+  checks the live archives: real FXCM holes (0-byte, truncated and missing
+  weeks) must come back complete from Exness. It downloads about 50 MB.
 
 ## Data sources
 
 | Source | How | Coverage |
 |---|---|---|
-| FXCM historical candles | **Automatic** (server downloads, validates, stores) | 22 FX pairs, M1 and H1, bid + ask in UTC, from 2012 to roughly 9 days ago |
+| FXCM historical candles | **Automatic**, first choice (server downloads, validates, stores) | 22 FX pairs, M1 and H1, bid + ask in UTC, from 2012 to roughly 9 days ago — with holes |
+| Exness tick history | **Automatic**, for every week FXCM lacks or has broken | the same 22 pairs, candles built from bid/ask ticks in UTC, from 2016 to yesterday |
 | CSV / ZIP import | `/replay/datasets` → Import | Anything with timestamp + OHLC: HistData, Dukascopy exports, MetaTrader, generic CSV, ticks |
 
 Automatic pairs: EURUSD, GBPUSD, USDJPY, USDCHF, USDCAD, AUDUSD, NZDUSD,
 EURJPY, GBPJPY, EURGBP, AUDCAD, AUDCHF, AUDJPY, AUDNZD, CADCHF, EURAUD,
 EURCHF, GBPCHF, GBPNZD, NZDCAD, NZDCHF, NZDJPY. XAUUSD and other metals,
-indices and pairs FXCM doesn't publish have to be imported.
+indices and other pairs have to be imported.
 
-Replay never makes up candles. A missing week is recorded as missing and
-shown in the session's data check. See [RESEARCH.md](RESEARCH.md) for why
-FXCM is the only automatic source, and its terms.
+History reaches the last trading week that closed (about two days ago): FXCM
+publishes 1–2 weeks late, and Exness fills the newest weeks until it does.
+
+Replay never makes up candles. Each week comes whole from one provider. A
+week no provider has is recorded as missing and shown in the session's data
+check. See [RESEARCH.md](RESEARCH.md) for how the sources were chosen, the
+holes found in FXCM's archive, and the terms.
 
 ## CSV import guide
 

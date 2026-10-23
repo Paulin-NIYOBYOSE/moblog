@@ -38,6 +38,7 @@ import { newProjection, projectionLevels, withLevels } from "./projection";
 import { dragDrawing, hitDrawing, ONE_POINT, TWO_POINT, type HitPart, type Projector } from "./drawings";
 import { riskBase } from "../workstation/ticket";
 import { showsContext } from "@/lib/replay/history";
+import { coverageLabel } from "@/lib/replay/providers";
 import { indicatorTitle } from "../workstation/IndicatorsDialog";
 import { TF_SHORT } from "../workstation/ChartTopBar";
 import { cn } from "@/lib/utils";
@@ -1480,7 +1481,7 @@ export default function ReplayChart(props: Props) {
       <div ref={legendBoxRef} className="pointer-events-none absolute left-3 top-2 z-10 max-w-[calc(100%-6rem)] space-y-1">
         <div className="flex flex-wrap items-center gap-x-2 text-[13px] tabular-nums">
           <span className="font-medium text-foreground/90">
-            {spec.symbol} · {TF_SHORT[tf]} · {snap.dataset.provider ? "FXCM" : snap.dataset.priceBasis === "unknown" ? "Imported" : snap.dataset.priceBasis}
+            {spec.symbol} · {TF_SHORT[tf]} · {snap.dataset.provider ? coverageLabel(snap.dataset.provider) : snap.dataset.priceBasis === "unknown" ? "Imported" : snap.dataset.priceBasis}
           </span>
           <span className="h-2 w-2 rounded-full bg-profit" title="Replay" />
           <span ref={legendRef} className="flex flex-wrap gap-x-1.5 text-[12.5px]" />

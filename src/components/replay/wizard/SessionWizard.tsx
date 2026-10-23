@@ -9,7 +9,7 @@ import { TagInput } from "@/components/ui/Inputs";
 import { useToast } from "@/components/ToastContext";
 import { DEFAULT_SPREAD_PIPS, PRIMARY_SYMBOLS, resolveInstrument, needsConversionRate, conversionPair } from "@/lib/replay/instruments";
 import { checkAvailability, suggestConversionRate, type Availability } from "@/lib/replay/marketData";
-import { FXCM, fxcmEarliestT, fxcmSupports, latestPublishedSunday } from "@/lib/replay/providers/fxcm";
+import { AUTO_FIRST_YEAR, AUTO_INSTRUMENTS, AUTO_SOURCE_NOTE, AUTO_TERMS, autoEarliestT, autoSupports, newestWeekEnd } from "@/lib/replay/providers";
 import { createProviderSession, createSession, defaultSettings } from "@/lib/replay/session";
 import { CONTEXT_TF, historyPlan } from "@/lib/replay/history";
 import { getInstrumentPrefs, saveInstrumentPrefs, saveSession, type InstrumentPrefs } from "@/lib/replay/storage/repo";
@@ -52,11 +52,6 @@ const bytes = (n: number) => (n >= 1e6 ? `${(n / 1e6).toFixed(1)} MB` : `${Math.
 
 type Source = { kind: "provider" } | { kind: "import"; dataset: DatasetMeta };
 
-/** Latest Friday close the provider is expected to have published. */
-function providerLatestEnd(nowSec: number) {
-  return latestPublishedSunday(nowSec) + 5 * DAY + 22 * 3600;
-}
-
 function StepHeader({ step }: { step: number }) {
   return (
     <ol className="mb-6 flex flex-wrap items-center gap-2 text-xs" aria-label="Steps">
@@ -84,7 +79,7 @@ export default function SessionWizard({ initialSymbol, initialDatasetId }: { ini
   const { datasets } = useDatasets();
   const { strategies } = useStrategies();
   const [nowSec] = useState(() => Math.floor(Date.now() / 1000));
-  const latestEnd = providerLatestEnd(nowSec);
+  const latestEnd = newestWeekEnd(nowSec);
 
   const [step, setStep] = useState(0);
   const [prefs, setPrefs] = useState<InstrumentPrefs>({ favorites: [], recent: [] });
@@ -128,13 +123,13 @@ export default function SessionWizard({ initialSymbol, initialDatasetId }: { ini
   const importedFor = (sym: string) => datasets.filter((d) => d.symbol === sym && !d.missingCandles);
   const fromT = fromDateInput(fromDate);
   const toT = fromDateInput(toDate, true);
-  const rangeFrom = source.kind === "import" ? source.dataset.firstT : fxcmEarliestT();
+  const rangeFrom = source.kind === "import" ? source.dataset.firstT : autoEarliestT();
   const rangeTo = source.kind === "import" ? source.dataset.lastT : latestEnd;
   const tfOptions = source.kind === "import" ? availableTimeframes(source.dataset.timeframe).filter((t) => WIZARD_TFS.includes(t)) : WIZARD_TFS;
 
   // ---- Instruments -------------------------------------------------------
   const allSymbols = useMemo(() => {
-    const set = new Set<string>([...PRIMARY_SYMBOLS, ...FXCM.instruments, ...datasets.map((d) => d.symbol)]);
+    const set = new Set<string>([...PRIMARY_SYMBOLS, ...AUTO_INSTRUMENTS, ...datasets.map((d) => d.symbol)]);
     return Array.from(set);
   }, [datasets]);
   const filtered = allSymbols.filter((s) => {
@@ -149,8 +144,8 @@ export default function SessionWizard({ initialSymbol, initialDatasetId }: { ini
         { label: "Favorites", items: prefs.favorites.filter((s) => allSymbols.includes(s)) },
         { label: "Recent", items: prefs.recent.filter((s) => allSymbols.includes(s) && !prefs.favorites.includes(s)) },
         { label: "Major pairs & gold", items: PRIMARY_SYMBOLS },
-        { label: "More FX crosses", items: FXCM.instruments.filter((s) => !PRIMARY_SYMBOLS.includes(s)) },
-        { label: "Imported only", items: Array.from(new Set(datasets.map((d) => d.symbol))).filter((s) => !FXCM.instruments.includes(s) && !PRIMARY_SYMBOLS.includes(s)) },
+        { label: "More FX crosses", items: AUTO_INSTRUMENTS.filter((s) => !PRIMARY_SYMBOLS.includes(s)) },
+        { label: "Imported only", items: Array.from(new Set(datasets.map((d) => d.symbol))).filter((s) => !AUTO_INSTRUMENTS.includes(s) && !PRIMARY_SYMBOLS.includes(s)) },
       ].filter((g) => g.items.length);
 
   const toggleFavorite = (s: string) => {
@@ -162,7 +157,7 @@ export default function SessionWizard({ initialSymbol, initialDatasetId }: { ini
   const chooseSymbol = (s: string) => {
     setSymbol(s);
     const imported = importedFor(s);
-    const auto = fxcmSupports(s, "M1");
+    const auto = autoSupports(s, "M1");
     const nextSource: Source = auto ? { kind: "provider" } : imported.length ? { kind: "import", dataset: imported[0] } : { kind: "provider" };
     setSource(nextSource);
     setSettings((st) => ({ ...st, spreadPips: DEFAULT_SPREAD_PIPS[s] ?? 1.5, spreadMode: nextSource.kind === "provider" || (nextSource.kind === "import" && nextSource.dataset.hasSpread) ? "recorded" : "fixed", conversionRate: null }));
@@ -203,9 +198,9 @@ export default function SessionWizard({ initialSymbol, initialDatasetId }: { ini
       setChecking(true);
       setCheckError(null);
       try {
-        const plan = historyPlan({ historyStartT: Math.max(fxcmEarliestT(), fromT - historyDays * DAY), startT: fromT }, resolution, dayBoundary);
-        const a = await checkAvailability({ provider: "fxcm", symbol, resolution, fromT: plan.fineFromT, toT }, { signal: ctrl.signal });
-        const c = plan.context ? await checkAvailability({ provider: "fxcm", symbol, resolution: CONTEXT_TF, fromT: plan.context.fromT, toT: plan.context.toT - 1 }, { signal: ctrl.signal }) : null;
+        const plan = historyPlan({ historyStartT: Math.max(autoEarliestT(), fromT - historyDays * DAY), startT: fromT }, resolution, dayBoundary);
+        const a = await checkAvailability({ symbol, resolution, fromT: plan.fineFromT, toT }, { signal: ctrl.signal });
+        const c = plan.context ? await checkAvailability({ symbol, resolution: CONTEXT_TF, fromT: plan.context.fromT, toT: plan.context.toT - 1 }, { signal: ctrl.signal }) : null;
         if (seq === checkSeq.current) {
           setAvail(a);
           setCtxAvail(c);
@@ -226,20 +221,20 @@ export default function SessionWizard({ initialSymbol, initialDatasetId }: { ini
   const lookupRate = (currency: string) => {
     if (!spec || !needsConversionRate(spec, currency) || fromT === null) return;
     const seq = ++rateSeq.current;
-    setRateHint("Looking up a conversion rate from FXCM…");
+    setRateHint("Looking up a conversion rate from historical data…");
     suggestConversionRate(spec.symbol, currency, fromT)
       .then((r) => {
         if (seq !== rateSeq.current) return;
         if (r) {
           setSettings((st) => (st.conversionRate ? st : { ...st, conversionRate: r.rate }));
-          setRateHint(`Prefilled from FXCM ${r.pair} ≈ ${r.pairPrice.toFixed(r.pair.endsWith("JPY") ? 3 : 5)} (average of the week before the start). Edit if you prefer another rate.`);
+          setRateHint(`Prefilled from ${r.pair} ≈ ${r.pairPrice.toFixed(r.pair.endsWith("JPY") ? 3 : 5)} (average of the week before the start). Edit if you prefer another rate.`);
         } else setRateHint(null);
       })
       .catch(() => seq === rateSeq.current && setRateHint(null));
   };
 
   // ---- Validation --------------------------------------------------------
-  const sourceAvailable = !!symbol && (source.kind === "import" || fxcmSupports(symbol, "M1"));
+  const sourceAvailable = !!symbol && (source.kind === "import" || autoSupports(symbol, "M1"));
   const periodErrors: string[] = [];
   if (fromT === null || toT === null) periodErrors.push("Choose a start and end date.");
   else if (toT <= fromT) periodErrors.push("The end date must be after the start date.");
@@ -312,7 +307,7 @@ export default function SessionWizard({ initialSymbol, initialDatasetId }: { ini
   // ---- Render ------------------------------------------------------------
   const set = <K extends keyof SessionSettings>(k: K, v: SessionSettings[K]) => setSettings((st) => ({ ...st, [k]: v }));
   const providerBadge = (s: string) => {
-    if (fxcmSupports(s, "M1")) return <span className="rounded bg-accent-soft px-1.5 py-0.5 text-[10px] font-semibold text-accent">Auto-download · {FXCM.firstYear}–now</span>;
+    if (autoSupports(s, "M1")) return <span className="rounded bg-accent-soft px-1.5 py-0.5 text-[10px] font-semibold text-accent">Auto-download · {AUTO_FIRST_YEAR}–now</span>;
     if (importedFor(s).length) return <span className="rounded bg-info-soft px-1.5 py-0.5 text-[10px] font-semibold text-info">Imported data</span>;
     return <span className="rounded bg-surface-3 px-1.5 py-0.5 text-[10px] font-semibold text-muted">Import a CSV first</span>;
   };
@@ -353,7 +348,7 @@ export default function SessionWizard({ initialSymbol, initialDatasetId }: { ini
                     {g.items.map((s) => {
                       const ins = resolveInstrument(s);
                       const selected = symbol === s;
-                      const disabled = !fxcmSupports(s, "M1") && !importedFor(s).length;
+                      const disabled = !autoSupports(s, "M1") && !importedFor(s).length;
                       return (
                         <div
                           key={`${g.label}-${s}`}
@@ -388,7 +383,7 @@ export default function SessionWizard({ initialSymbol, initialDatasetId }: { ini
             {symbol && !sourceAvailable && (
               <p className="mt-3 flex items-start gap-2 text-sm text-warning">
                 <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-                {symbol} isn’t in FXCM’s free archive. <Link href="/replay/datasets" className="underline">Import a CSV</Link> (HistData has XAU/USD) and it will appear here.
+                {symbol} isn’t in the free FXCM and Exness archives. <Link href="/replay/datasets" className="underline">Import a CSV</Link> (HistData has XAU/USD) and it will appear here.
               </p>
             )}
           </div>
@@ -396,20 +391,20 @@ export default function SessionWizard({ initialSymbol, initialDatasetId }: { ini
 
         {step === 1 && symbol && (
           <div className="space-y-5">
-            {(importedFor(symbol).length > 0 || fxcmSupports(symbol, "M1")) && (
+            {(importedFor(symbol).length > 0 || autoSupports(symbol, "M1")) && (
               <Field label="Data source">
                 <div className="flex flex-wrap gap-2">
-                  {fxcmSupports(symbol, "M1") && (
+                  {autoSupports(symbol, "M1") && (
                     <button
                       type="button"
                       className="chip"
                       data-active={source.kind === "provider"}
                       onClick={() => {
                         setSource({ kind: "provider" });
-                        applyPreset(preset, latestEnd, fxcmEarliestT());
+                        applyPreset(preset, latestEnd, autoEarliestT());
                       }}
                     >
-                      <CloudDownload className="h-3.5 w-3.5" /> FXCM — automatic download
+                      <CloudDownload className="h-3.5 w-3.5" /> Automatic download (FXCM + Exness)
                     </button>
                   )}
                   {importedFor(symbol).map((d) => (
@@ -507,14 +502,14 @@ export default function SessionWizard({ initialSymbol, initialDatasetId }: { ini
                 <span className="font-semibold uppercase tracking-wider text-muted">Coverage</span>
                 {checking && (
                   <span className="flex items-center gap-1.5 text-muted">
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" /> Checking with FXCM…
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" /> Checking availability…
                   </span>
                 )}
               </div>
               <CoverageBar rangeFrom={rangeFrom} rangeTo={rangeTo} fromT={fromT ?? rangeFrom} toT={toT ?? rangeTo} />
               <div className="mt-1 flex justify-between text-[10.5px] text-faint">
                 <span>{fmtDate(rangeFrom)}</span>
-                <span>{source.kind === "provider" ? `≈ ${fmtDate(rangeTo)} (latest published)` : fmtDate(rangeTo)}</span>
+                <span>{source.kind === "provider" ? `${fmtDate(rangeTo)} (last finished week)` : fmtDate(rangeTo)}</span>
               </div>
               {source.kind === "import" ? (
                 <p className="mt-3 flex items-center gap-2 text-sm">
@@ -538,7 +533,7 @@ export default function SessionWizard({ initialSymbol, initialDatasetId }: { ini
                     </div>
                   </div>
                   <p className="text-xs text-muted sm:col-span-3">
-                    ≈ {avail.estimatedCandles.toLocaleString()} {resolution} candles (≈ {bytes(avail.estimatedCandles * 10)} of database storage), bid + ask prices, UTC. Source: {FXCM.name}.
+                    ≈ {avail.estimatedCandles.toLocaleString()} {resolution} candles (≈ {bytes(avail.estimatedCandles * 10)} of database storage), bid + ask prices, UTC. Source: {AUTO_SOURCE_NOTE}.
                   </p>
                   {ctxAvail?.supported && (
                     <p className="flex items-start gap-1.5 text-xs text-muted sm:col-span-3" data-testid="context-preview">
@@ -609,7 +604,7 @@ export default function SessionWizard({ initialSymbol, initialDatasetId }: { ini
                   <input className="input tabular-nums" type="number" min={0.01} step={0.01} value={settings.fixedLots} onChange={(e) => set("fixedLots", Number(e.target.value))} />
                 </Field>
               )}
-              <Field label="Spread" hint={settings.spreadMode === "recorded" ? "Real bid/ask from the data (FXCM's are tight: often 0.1–0.3 pip on majors)." : "Applied to every fill."}>
+              <Field label="Spread" hint={settings.spreadMode === "recorded" ? "Real bid/ask spread recorded in the data (a fraction of a pip on majors)." : "Applied to every fill."}>
                 <div className="flex gap-1.5">
                   <select className="input" value={settings.spreadMode} onChange={(e) => set("spreadMode", e.target.value as SessionSettings["spreadMode"])} disabled={source.kind === "import" && !source.dataset.hasSpread}>
                     <option value="recorded">Historical</option>
@@ -698,7 +693,7 @@ export default function SessionWizard({ initialSymbol, initialDatasetId }: { ini
               {(
                 [
                   ["Market", `${spec.symbol} — ${spec.description}`],
-                  ["Data", source.kind === "provider" ? `${FXCM.name}, ${resolution} bid/ask, UTC` : `${source.dataset.name} (imported)`],
+                  ["Data", source.kind === "provider" ? `Automatic download (FXCM + Exness), ${resolution} bid/ask, UTC` : `${source.dataset.name} (imported)`],
                   ["Period", `${fmtDate(finalFrom)} → ${fmtDate(finalTo)}`],
                   ["Replay starts", fmtDate(startT)],
                   ["Chart timeframe", `${timeframe} — ${TF_LABEL[timeframe]}`],
@@ -723,7 +718,9 @@ export default function SessionWizard({ initialSymbol, initialDatasetId }: { ini
                   : "All required history is already stored in your database."}
               </p>
             )}
-            <p className="text-xs text-muted">{FXCM.terms}</p>
+            <p className="text-xs text-muted">
+              Source: {AUTO_SOURCE_NOTE}. {AUTO_TERMS}
+            </p>
           </div>
         )}
       </div>

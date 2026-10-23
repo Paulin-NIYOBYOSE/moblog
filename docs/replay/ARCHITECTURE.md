@@ -13,7 +13,9 @@ src/lib/replay/                     domain logic (framework-free, unit-tested)
   pack.ts                           RPK1 binary candle format (shared by client and server)
   csv.ts, unzip.ts, importer.ts     CSV/ZIP import: detection, streaming parser, quality report
   import.worker.ts, importClient.ts import Web Worker (bundled to public/replay-import.worker.js)
+  providers/index.ts                provider order, complete-week check, dataset id
   providers/fxcm.ts                 FXCM week numbering, URLs, CSV parser and validation
+  providers/exness.ts               Exness month files, tick → candle parser
   marketData.ts                     download planner and pipeline (resume, retry, fallback)
   dataClient.ts                     prepareData(): runs the pipeline with progress and cancel
   engine.ts, sizing.ts              deterministic execution engine; position sizing
@@ -22,7 +24,7 @@ src/lib/replay/                     domain logic (framework-free, unit-tested)
   storage/repo.ts                   API client used by the UI
   storage/legacy.ts, storage/db.ts  read-only reader of the old IndexedDB data (one-time migration)
   server/store.ts                   Prisma store: datasets, candles, sessions, journal, backup
-  server/fxcmIngest.ts              server-side FXCM download → parse → validate → store
+  server/ingest.ts                  server-side download (FXCM, else Exness) → parse → validate → store
   server/http.ts                    auth check and error mapping for the API routes
 src/app/api/replay/                 API routes (below)
 src/components/replay/              UI: dashboard, wizard, preparation, workstation, chart, analytics, journal
@@ -35,7 +37,7 @@ src/app/(dashboard)/replay/         pages
 |---|---|---|
 | `ReplayDataset` | `id` | symbol, timeframe, source, kind (`provider` / `import`), price basis, metadata (time zone, quality report, files), version |
 | `ReplayCandleDay` | `(datasetId, day)` | one UTC day of candles as a deflated RPK1 pack, with status (`ok` / `empty`), count, first/last time, revision |
-| `ReplayProviderChunk` | `(datasetId, chunk)` | one provider file (FXCM week `2024-W10`): `ok` / `empty` / `missing`, candle count, rejected rows, fetch time |
+| `ReplayProviderChunk` | `(datasetId, chunk)` | one trading week (`2024-W10`): `ok` / `partial` / `missing` (`empty` in older rows), candle count, rejected rows, the provider it came from (`source`), the providers asked (`tried`), fetch time |
 | `ReplaySession` | `id` | name, symbol, timeframe, status, favourite, archived, strategy, tags, revision, and the session document as JSON text |
 | `ReplayJournalEntry` | `(sessionId, tradeId)` | one trade's journal entry (cascade-deleted with the session) |
 | `ReplayMeta` | `key` | strategy templates, per-instrument preferences, app preferences |
@@ -64,7 +66,7 @@ Notes on the storage format:
 | `datasets` | GET list · POST create an import dataset |
 | `datasets/[id]` | GET · PATCH (rename, record an imported file, merge quality) · DELETE |
 | `datasets/[id]/candles` | GET `?from&to` (≤ 40 days per request, gzip) · PUT an uploaded pack (validated) |
-| `data/fxcm` | GET probe a week · POST download and store a week |
+| `data/history` | GET probe a week · POST download and store a week (`final` on the last attempt) |
 | `data/validate` | POST gap check of a range |
 | `sessions` | GET (`view=summary\|analytics\|full`) · POST |
 | `sessions/[id]` | GET · PUT `{session, baseRevision}` · PATCH (name, favourite, archive, tags…) · DELETE |
@@ -75,28 +77,45 @@ Notes on the storage format:
 
 ## Data pipeline (automatic download)
 
-The browser drives the download one FXCM week at a time, so progress is real
-and a closed tab loses at most the week in flight.
+The browser drives the download one trading week at a time (FXCM's week
+numbering), so progress is real and a closed tab loses at most the week in
+flight.
 
 1. **Plan** (`planRequest`). The requested range plus the history before it is
-   split into FXCM weeks. Each week is then sorted into one of these groups:
-   - **already stored:** reused by every session
-   - **known missing:** re-checked only while it is recent
-   - **not published yet:** newer than the provider's lag
-   - **to download:** everything else
+   split into weeks. Each week is then sorted into one of these groups:
+   - **already stored:** complete, or the fullest any provider has (`partial`,
+     e.g. Christmas week) — reused by every session
+   - **known missing:** no provider has it; re-checked only while it is recent
+   - **not finished yet:** newer than the last week that closed ~2 days ago
+   - **to download:** everything else, including weeks stored `missing`,
+     `empty` or truncated before a provider was asked (rows from before the
+     Exness fallback have `tried = {fxcm}`, so they are repaired once)
 2. **Download** (`ensureProviderData`, 2 weeks at a time). For each week the
-   browser calls `POST /api/replay/data/fxcm`. The server then:
+   browser calls `POST /api/replay/data/history`. The server then:
    - recomputes the week from its year and number and rejects anything that
      doesn't match
-   - downloads the `.csv.gz` (30 s timeout, 12 MB cap) and gunzips it
-   - parses it strictly and validates it, counting rejected rows
-   - stores the week's candle-days and its chunk record in one transaction
+   - asks the providers in order until one has the **complete** week
+     (`isCompleteWeek`: ≥ 85 % of the minutes, no gap over 3 h, open to
+     close):
+     1. FXCM's `.csv.gz` (20 s timeout). A 404, a 0-byte, corrupt or
+        header-only file, or a truncated week moves on to the next provider.
+     2. Exness: the month file(s) the week falls in (≤ 64 MB, unzipped on the
+        server), turned into candles from the ticks. The last 3 month files
+        stay cached for 10 minutes, so the other weeks of a month reuse them.
+   - keeps the complete week, or else the fullest one (`partial`), or records
+     the week `missing`
+   - stores the week's candles and its chunk record in one transaction. The
+     candles replace whatever was stored inside the week, so a week always
+     comes from one provider; storing the same candles again changes nothing.
 
-   When FXCM returns an error:
-   - **404/403:** the week is recorded as `missing`
-   - **429/5xx:** the server returns 503 with `Retry-After`. The client waits
-     for that delay (or backs off) and retries up to 5 times, then stops with
-     a message. It never hammers the provider.
+   When a provider is busy (429, 5xx, timeout), the next one is asked. Only
+   when no provider has the complete week and one of them was busy does the
+   server return 503 with `Retry-After`; the client waits for that delay (or
+   backs off) and retries up to 5 times. The last attempt is sent with
+   `final`: the server stores the best week it found and leaves the busy
+   provider out of `tried`, so it's asked again next time. If every provider
+   is busy on every attempt, the client stops with a message. It never
+   hammers a provider.
 3. **Check** (`data/validate`). Gaps in the session's range are counted, with
    weekend closures told apart from missing intervals. The result is saved on
    the session (`dataCheck`) and shown on its detail page.
@@ -107,8 +126,9 @@ and a closed tab loses at most the week in flight.
 
 - **Planning:** history further back than ~3 months is planned as hourly
   "context".
-  - Automatic sessions download FXCM's hourly files for it (dataset
-    `fxcm_SYMBOL_H1`, 4 files at a time).
+  - Automatic sessions download hourly weeks for it (dataset
+    `fxcm_SYMBOL_H1`, 4 weeks at a time): FXCM's hourly files, or hourly
+    candles from Exness ticks where FXCM has a gap.
   - Imported datasets get it from `GET …/candles?tf=H1`, which aggregates on
     the server, up to a year per request.
 - **The seam:** base data starts on a weekly boundary, so no 1h–1W candle

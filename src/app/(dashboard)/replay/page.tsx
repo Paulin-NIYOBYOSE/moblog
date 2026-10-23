@@ -34,7 +34,7 @@ import ReplayNav, { ReplayFooter } from "@/components/replay/ReplayNav";
 import BackupCard, { StorageMeter } from "@/components/replay/BackupCard";
 import Popover from "@/components/replay/Popover";
 import { fmtPct, fmtR, money, tone } from "@/components/replay/format";
-import { FXCM } from "@/lib/replay/providers/fxcm";
+import { AUTO_FIRST_YEAR, AUTO_INSTRUMENTS, coverageLabel } from "@/lib/replay/providers";
 import { duplicateSession, sessionProgress } from "@/lib/replay/session";
 import { deleteSession, getSession, patchSession, saveSession } from "@/lib/replay/storage/repo";
 import { formatInTz } from "@/lib/replay/time";
@@ -80,8 +80,8 @@ function readiness(s: ReplaySession, datasets: DatasetMeta[]): Readiness {
   if (!ds && !provider) return { tone: "loss", label: "Data missing", hint: "The imported dataset was deleted — re-import it to reopen the chart." };
   if (provider && (!ds || !s.dataCheck)) return { tone: "info", label: "Download pending", hint: "History is downloaded the first time you open the chart." };
   if (ds?.missingCandles) return { tone: "warning", label: "Candles missing", hint: "Restored from a backup without candles — re-import the file." };
-  if (s.dataCheck?.missingWeeks.length) return { tone: "warning", label: "Data ready · gaps", hint: `${s.dataCheck.missingWeeks.length} week(s) have no provider data.` };
-  return { tone: "profit", label: "Data ready", hint: provider ? `Stored from ${FXCM.name}` : "Imported data" };
+  if (s.dataCheck?.missingWeeks.length) return { tone: "warning", label: "Data ready · gaps", hint: `No provider has ${s.dataCheck.missingWeeks.length} week(s) of this period.` };
+  return { tone: "profit", label: "Data ready", hint: provider ? `Downloaded from ${coverageLabel(ds?.provider, false)}` : "Imported data" };
 }
 
 export default function ReplayHubPage() {
@@ -279,7 +279,7 @@ export default function ReplayHubPage() {
               </div>
               <h2 className="mt-4 text-lg font-semibold">Start your first backtest</h2>
               <p className="mt-1 text-sm text-muted">
-                Choose a pair such as EURUSD, a period and a timeframe. Replay downloads the minute data from {FXCM.name} into your database, hides every candle after your start date, and lets you trade forward.
+                Choose a pair such as EURUSD, a period and a timeframe. Replay downloads the minute data from FXCM&apos;s free archive (with Exness tick history filling any week FXCM lacks) into your database, hides every candle after your start date, and lets you trade forward.
               </p>
               <div className="mt-5 flex flex-wrap justify-center gap-2">
                 <Link href="/replay/new" className="btn btn-primary">
@@ -289,7 +289,7 @@ export default function ReplayHubPage() {
                   <FileUp className="h-4 w-4" /> Import your own data
                 </Link>
               </div>
-              <p className="mt-4 text-[11px] text-faint">Free, no API key. Coverage: 21 FX pairs from {FXCM.firstYear} to about two weeks ago. Gold and other markets: import a CSV.</p>
+              <p className="mt-4 text-[11px] text-faint">Free, no API key. Coverage: {AUTO_INSTRUMENTS.length} FX pairs from {AUTO_FIRST_YEAR} to last week. Gold and other markets: import a CSV.</p>
             </div>
           </Card>
           <BackupCard />

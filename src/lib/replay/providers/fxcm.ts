@@ -11,10 +11,15 @@ import type { Bars, QualityReport, Timeframe } from "../types";
 // week number uses Sunday-start weeks where week 1 is the first week with at
 // least four days in that year. Weeks whose Sunday belongs to the previous
 // year are filed under that previous year (e.g. Sun 29 Dec 2019 → 2019/53).
+//
+// The archive has holes for every pair: weeks with no file, 0-byte or
+// header-only files, and files cut off after a few hours (e.g. 2024-W51,
+// 2025-W26, 2026-W18…W31). Exness tick history fills them (see ./index.ts).
 
 export const FXCM = {
   id: "fxcm" as const,
   name: "FXCM historical candles",
+  short: "FXCM",
   homepage: "https://github.com/fxcm/MarketData",
   terms: "Published by FXCM for personal use under its EULA. Prices are indicative (lowest Active Trader spreads). Stored only in your own database, never redistributed.",
   /** First year with files on the server (2011 and earlier return 404). */
@@ -27,11 +32,6 @@ export const FXCM = {
     "AUDCAD", "AUDCHF", "AUDJPY", "AUDNZD", "CADCHF", "EURAUD", "EURCHF", "GBPCHF", "GBPNZD", "NZDCAD", "NZDCHF", "NZDJPY",
   ],
 };
-
-/** One shared dataset per provider, symbol and resolution. */
-export function providerDatasetId(req: { provider: "fxcm"; symbol: string; resolution: Timeframe }): string {
-  return `${req.provider}_${req.symbol}_${req.resolution}`;
-}
 
 /** The weekly file (year/week) that `chunk` claims to be — recomputed, never trusted. */
 export function chunkFor(year: number, week: number, fromT: number): FxcmChunk | null {
@@ -104,7 +104,7 @@ export function fxcmEarliestT(): number {
   return Date.UTC(FXCM.firstYear, 0, 1) / 1000;
 }
 
-function emptyQuality(): QualityReport {
+export function emptyQuality(): QualityReport {
   return {
     rowsRead: 0,
     malformed: 0,
@@ -123,7 +123,8 @@ function emptyQuality(): QualityReport {
 
 const HEADER = "DateTime,BidOpen,BidHigh,BidLow,BidClose,AskOpen,AskHigh,AskLow,AskClose";
 
-export interface FxcmParsed {
+/** Candles parsed from one provider file, with what validation rejected. */
+export interface ParsedCandles {
   bars: Bars;
   quality: QualityReport;
   /** Rows whose timestamp fell outside the file's week window. */
@@ -137,7 +138,7 @@ export interface FxcmParsed {
  * Bars keep BID prices; the per-bar spread is the mean of the open and close
  * bid/ask spreads. Invalid rows are rejected and counted, never repaired.
  */
-export function parseFxcmCsv(text: string, chunk?: Pick<FxcmChunk, "fromT" | "toT">, periodSec = 60): FxcmParsed {
+export function parseFxcmCsv(text: string, chunk?: Pick<FxcmChunk, "fromT" | "toT">, periodSec = 60): ParsedCandles {
   const quality = emptyQuality();
   const lines = text.split(/\r?\n/);
   if ((lines[0] ?? "").replace(/^﻿/, "").trim() !== HEADER) {

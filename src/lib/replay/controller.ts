@@ -5,6 +5,7 @@ import { indexAtOrBefore } from "./bars";
 import { CONTEXT_TF, historyPlan, showsContext, withContext } from "./history";
 import { ReplayEngine, type ApplyResult, type LedgerEvent, type Quote } from "./engine";
 import { resolveInstrument } from "./instruments";
+import { providerDatasetId } from "./providers";
 import { datasetChangedInRange, pruneJournal, resetSession, rewindImpact, truncateCommands } from "./session";
 import { ApiError, getDataset, loadBars, newId, pruneJournalEntries, saveJournalEntry, saveSession } from "./storage/repo";
 import { bucketKey, TF_SECONDS } from "./time";
@@ -155,7 +156,7 @@ export class ReplayController {
     const warnings: string[] = [];
     // Long history: ~3 months of base candles + older hourly candles for the chart.
     const plan = historyPlan(session, dataset.timeframe, session.settings.dayBoundary);
-    const contextId = dataset.provider ? `fxcm_${session.symbol}_${CONTEXT_TF}` : dataset.id;
+    const contextId = dataset.provider ? providerDatasetId({ symbol: session.symbol, resolution: CONTEXT_TF }) : dataset.id;
     const [bars, context] = await Promise.all([
       loadBars(dataset.id, plan.fineFromT, session.endT, { onProgress, signal }),
       plan.context

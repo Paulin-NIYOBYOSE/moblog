@@ -29,7 +29,7 @@ import { TagInput } from "@/components/ui/Inputs";
 import { useConfirm } from "@/components/ConfirmContext";
 import { useToast } from "@/components/ToastContext";
 import { computeMetrics, enrichTrades, METRIC_HELP, type AnalyticsTrade } from "@/lib/replay/analytics";
-import { FXCM } from "@/lib/replay/providers/fxcm";
+import { AUTO_TERMS, coverageLabel } from "@/lib/replay/providers";
 import { downloadText, duplicateSession, sessionProgress, tradesToCsv } from "@/lib/replay/session";
 import { deleteSession, getDataset, getSession, patchSession, saveSession } from "@/lib/replay/storage/repo";
 import { formatDuration, formatInTz } from "@/lib/replay/time";
@@ -160,7 +160,7 @@ export default function SessionDetail({ sessionId }: { sessionId: string }) {
   };
 
   const recent = [...trades].reverse().slice(0, 10);
-  const sourceLabel = s.source?.kind === "provider" || ds?.provider ? `${FXCM.name} (automatic download)` : ds ? `Imported file${ds.files.length > 1 ? "s" : ""}` : "Dataset deleted";
+  const sourceLabel = s.source?.kind === "provider" || ds?.provider ? `${coverageLabel(ds?.provider, false)} (automatic download)` : ds ? `Imported file${ds.files.length > 1 ? "s" : ""}` : "Dataset deleted";
 
   return (
     <div>
@@ -324,7 +324,7 @@ export default function SessionDetail({ sessionId }: { sessionId: string }) {
                       <dd className={cn("tabular-nums", s.dataCheck.gapCount ? "text-warning" : undefined)}>{s.dataCheck.gapCount.toLocaleString()}</dd>
                     </div>
                     {s.dataCheck.missingWeeks.length > 0 && (
-                      <p className="rounded-lg bg-warning-soft px-2 py-1.5 text-warning">No provider file for week(s) {s.dataCheck.missingWeeks.join(", ")} — shown as gaps, never filled.</p>
+                      <p className="rounded-lg bg-warning-soft px-2 py-1.5 text-warning">No provider has week(s) {s.dataCheck.missingWeeks.join(", ")} — shown as gaps, never filled.</p>
                     )}
                     {s.dataCheck.largeGaps.length > 0 && (
                       <details className="text-muted">
@@ -343,7 +343,7 @@ export default function SessionDetail({ sessionId }: { sessionId: string }) {
                 ) : (
                   <p className="text-[11px] text-faint">The data check runs when the session is prepared.</p>
                 )}
-                {ds.provider && <p className="pt-1 text-[11px] leading-snug text-faint">{FXCM.terms}</p>}
+                {ds.provider && <p className="pt-1 text-[11px] leading-snug text-faint">{AUTO_TERMS}</p>}
               </dl>
             )}
           </Card>

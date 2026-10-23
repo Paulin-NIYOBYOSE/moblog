@@ -1,4 +1,5 @@
 import { DEFAULT_SPREAD_PIPS, resolveInstrument } from "./instruments";
+import { providerDatasetId } from "./providers";
 import { newId } from "./storage/repo";
 import { formatInTz } from "./time";
 import type {
@@ -127,7 +128,7 @@ export function createProviderSession(input: ProviderSessionInput): ReplaySessio
     source: { kind: "provider", provider: "fxcm", resolution: input.resolution },
     createdAt: now,
     updatedAt: now,
-    datasetId: `fxcm_${input.symbol}_${input.resolution}`,
+    datasetId: providerDatasetId(input),
     datasetVersion: 0,
     datasetMonthRevs: {},
     symbol: input.symbol,

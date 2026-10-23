@@ -297,19 +297,23 @@ model ReplayDataset {
   @@index([symbol, source])
 }
 
-// Which provider files (e.g. FXCM weekly CSVs) have been processed, so a
-// week is downloaded at most once and missing weeks aren't re-requested
-// forever. Written in the same transaction as the candles they produced.
+// Which trading weeks have been downloaded, so a week is downloaded at most
+// once and missing weeks aren't re-requested forever. Written in the same
+// transaction as the candles they produced.
 model ReplayProviderChunk {
   dataset   ReplayDataset @relation(fields: [datasetId], references: [id], onDelete: Cascade)
   datasetId String
   chunk     String // e.g. "2024-W10"
-  status    String // "ok" | "empty" | "missing"
+  status    String // "ok" | "partial" | "missing" | "empty" (legacy)
   n         Int
   bytes     Int      @default(0)
   // Rejected rows etc. from validating this file.
   quality   Json?
   fetchedAt DateTime @default(now())
+  // Provider whose candles are stored ("fxcm" | "exness"), null when none had the week.
+  source    String?
+  // Providers asked for this week; one not asked yet gets a chance to fill it.
+  tried     String[] @default(["fxcm"])
 
   @@id([datasetId, chunk])
 }
