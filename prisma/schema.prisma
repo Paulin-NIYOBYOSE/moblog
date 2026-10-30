@@ -306,14 +306,14 @@ model ReplayProviderChunk {
   chunk     String // e.g. "2024-W10"
   status    String // "ok" | "partial" | "missing" | "empty" (legacy)
   n         Int
-  bytes     Int      @default(0)
+  bytes     Int           @default(0)
   // Rejected rows etc. from validating this file.
   quality   Json?
-  fetchedAt DateTime @default(now())
+  fetchedAt DateTime      @default(now())
   // Provider whose candles are stored ("fxcm" | "exness"), null when none had the week.
   source    String?
   // Providers asked for this week; one not asked yet gets a chance to fill it.
-  tried     String[] @default(["fxcm"])
+  tried     String[]      @default(["fxcm"])
 
   @@id([datasetId, chunk])
 }
@@ -331,8 +331,8 @@ model ReplayCandleDay {
   lastT     Int?
   bytes     Int
   data      Bytes?
-  rev       Int      @default(1)
-  fetchedAt DateTime @default(now())
+  rev       Int           @default(1)
+  fetchedAt DateTime      @default(now())
 
   @@id([datasetId, day])
 }
@@ -374,6 +374,103 @@ model ReplayJournalEntry {
 
 // Small key/value settings: strategy templates, preferences.
 model ReplayMeta {
+  key       String   @id
+  value     Json
+  updatedAt DateTime @updatedAt
+}
+
+// ---------------------------------------------------------------------------
+// Notebook — a simple personal notebook: a monthly budget, savings (general
+// savings, fed by what each month doesn't plan for, and the kill list — the
+// things you save for) and notes, day by day. Days are local yyyy-mm-dd
+// strings and months yyyy-mm, like JournalEntry.day.
+// ---------------------------------------------------------------------------
+
+// Something to save for and buy (the kill list). `position` is its priority
+// (0 = the item you're targeting next); you can save toward it at any time,
+// and it's "killed" once bought (boughtOn set), paid from its savings and/or
+// that month's money.
+model KillItem {
+  id          String        @id @default(cuid())
+  name        String
+  price       Float? // estimated cost
+  position    Int           @default(0)
+  targetMonth String? // yyyy-mm — "buy by"
+  link        String?
+  notes       String?
+  boughtOn    String? // yyyy-mm-dd
+  paid        Float? // what it actually cost
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  // Money saved toward it, taken out of it, and its purchase.
+  entries     BudgetEntry[]
+}
+
+// A spending category of one month's budget. Every month has its own, so
+// changing or removing one never touches another month; "copy last month"
+// duplicates them.
+model BudgetCategory {
+  id        String        @id @default(cuid())
+  month     String // yyyy-mm
+  name      String
+  emoji     String?
+  planned   Float         @default(0) // planned spending that month
+  position  Int           @default(0)
+  createdAt DateTime      @default(now())
+  entries   BudgetEntry[]
+
+  @@index([month])
+}
+
+// A month's plan: expected income and planned saving per kill-list item (key =
+// "k:<killItemId>"). Planned spending is on the month's categories; what's
+// left goes to general savings.
+model BudgetMonth {
+  month     String   @id // yyyy-mm
+  income    Float    @default(0)
+  plan      Json     @default("{}")
+  updatedAt DateTime @updatedAt
+}
+
+// Money on a day:
+//   income      money in
+//   expense     money spent (categoryId = its category that month); a
+//               kill-list purchase names its item, and `fromSavings` of it was
+//               paid from what was saved for it
+//   saving      money put aside for a kill item, or moved to general savings (no item)
+//   withdrawal  money taken back out of a kill item
+model BudgetEntry {
+  id          String          @id @default(cuid())
+  day         String // yyyy-mm-dd
+  kind        String          @default("expense")
+  amount      Float
+  category    BudgetCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  categoryId  String?
+  note        String?
+  killItem    KillItem?       @relation(fields: [killItemId], references: [id], onDelete: SetNull)
+  killItemId  String?
+  fromSavings Float?
+  createdAt   DateTime        @default(now())
+
+  @@index([day])
+  @@index([killItemId])
+}
+
+// A line on a day of the notes (the notebook's planner): a note or a plan,
+// ticked off when done.
+model NotebookNote {
+  id        String   @id @default(cuid())
+  day       String // yyyy-mm-dd
+  text      String
+  done      Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([day])
+}
+
+// Notebook settings ("settings": { currency, generalGoal, generalStart }).
+model NotebookMeta {
   key       String   @id
   value     Json
   updatedAt DateTime @updatedAt

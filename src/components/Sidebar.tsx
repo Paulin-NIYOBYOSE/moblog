@@ -16,6 +16,7 @@ import {
   Loader2,
   LogOut,
   NotebookPen,
+  NotebookTabs,
   Pencil,
   PlugZap,
   Plus,
@@ -62,6 +63,10 @@ const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
   {
     label: "Studio",
     items: [{ label: "Content", href: "/content", icon: FileText }],
+  },
+  {
+    label: "Personal",
+    items: [{ label: "Notebook", href: "/notebook", icon: NotebookTabs, badge: "New" }],
   },
 ];
 

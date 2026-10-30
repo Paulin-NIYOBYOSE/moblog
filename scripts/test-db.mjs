@@ -49,7 +49,7 @@ export function startTestDb({ fresh = true } = {}) {
 
 /** Empty Replay's tables (between end-to-end tests). */
 export function resetTestDb() {
-  execFileSync(bin("psql"), ["-h", "127.0.0.1", "-p", String(PORT), "-U", "postgres", "-d", "replay_test", "-q", "-c", 'TRUNCATE "ReplayJournalEntry", "ReplaySession", "ReplayCandleDay", "ReplayProviderChunk", "ReplayDataset", "ReplayMeta" CASCADE'], { stdio: "ignore" });
+  execFileSync(bin("psql"), ["-h", "127.0.0.1", "-p", String(PORT), "-U", "postgres", "-d", "replay_test", "-q", "-c", 'TRUNCATE "ReplayJournalEntry", "ReplaySession", "ReplayCandleDay", "ReplayProviderChunk", "ReplayDataset", "ReplayMeta", "NotebookNote", "BudgetEntry", "KillItem", "BudgetCategory", "BudgetMonth", "NotebookMeta" CASCADE'], { stdio: "ignore" });
 }
 
 export function stopTestDb() {

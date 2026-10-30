@@ -373,3 +373,84 @@ export interface BtItem {
   createdAt: string;
   updatedAt: string;
 }
+
+// ---------------------------------------------------------------------------
+// Notebook — budget, savings, kill list and notes (src/lib/notebook.ts)
+// ---------------------------------------------------------------------------
+
+export interface KillItem {
+  id: string;
+  name: string;
+  price: number | null;
+  /** Priority: 0 = the item you're targeting next. */
+  position: number;
+  targetMonth: string | null; // yyyy-mm
+  link: string | null;
+  notes: string | null;
+  boughtOn: string | null; // yyyy-mm-dd
+  paid: number | null;
+  createdAt: string;
+}
+
+/** A spending category of one month's budget (each month has its own). */
+export interface BudgetCategory {
+  id: string;
+  month: string; // yyyy-mm
+  name: string;
+  emoji: string | null;
+  /** Planned spending that month. */
+  planned: number;
+  position: number;
+}
+
+export interface BudgetMonth {
+  month: string; // yyyy-mm
+  income: number;
+  /** Planned saving per kill-list item: "k:<killItemId>". What's left goes to general savings. */
+  plan: Record<string, number>;
+}
+
+/** income · expense · saving (put aside) · withdrawal (taken back out of savings). */
+export type BudgetKind = "expense" | "income" | "saving" | "withdrawal";
+
+export interface BudgetEntry {
+  id: string;
+  day: string; // yyyy-mm-dd
+  kind: BudgetKind;
+  amount: number;
+  /** Spending category of an expense, from that month's budget. */
+  categoryId: string | null;
+  note: string | null;
+  /** Kill-list item of a saving / withdrawal (none = moved to general savings), or the item an expense bought. */
+  killItemId: string | null;
+  /** Part of a kill-list purchase paid from what was saved for it. */
+  fromSavings: number | null;
+  createdAt: string;
+}
+
+/** A note or a plan on a day of the notebook's planner. */
+export interface NotebookNote {
+  id: string;
+  day: string; // yyyy-mm-dd
+  text: string;
+  done: boolean;
+  createdAt: string;
+}
+
+export interface NotebookSettings {
+  /** ISO 4217 code for the budget, or null until chosen. */
+  currency: string | null;
+  /** What you want general savings to reach in total. */
+  generalGoal: number | null;
+  /** Savings you already had when you started. */
+  generalStart: number | null;
+}
+
+export interface NotebookData {
+  settings: NotebookSettings;
+  killItems: KillItem[];
+  categories: BudgetCategory[];
+  months: BudgetMonth[];
+  entries: BudgetEntry[];
+  notes: NotebookNote[];
+}
