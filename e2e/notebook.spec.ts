@@ -80,6 +80,7 @@ test("notebook: plan the month, income flows to general savings, save for the ki
   // Saved for the laptop out of what was unplanned: general savings has less, the total is the same.
   await expect(page.getByTestId("general-balance")).toContainText("300,000");
   await expect(page.getByTestId("savings-total")).toContainText("400,000");
+  await expect(page.getByTestId("kill-list-total")).toContainText("100,000");
 
   // Buy the laptop: its savings pay first, the month only the rest.
   await page.getByTestId("kill-it-Laptop").click();
@@ -123,6 +124,7 @@ test("notebook: plan the month, income flows to general savings, save for the ki
   await page.getByTestId("general-save").click();
   await expect(page.getByTestId("general-goal")).toContainText("27% of your RWF");
   await expect(page.getByTestId("savings-total")).toContainText("300,000");
+  await expect(page.getByTestId("kill-list-total")).toContainText("30,000");
   await page.getByRole("button", { name: "How it adds up" }).click();
   await expect(page.getByTestId("general-how")).toContainText("+RWF 270,000");
   await page.screenshot({ path: test.info().outputPath("savings.png"), fullPage: true });
@@ -243,4 +245,20 @@ test("notebook: every month's budget is its own — copy last month, then change
   await page.getByRole("button", { name: "Previous" }).click();
   await expect(page.getByTestId("budget-lines")).toContainText("🏠 Rent");
   await expect(page.getByTestId("budget-left")).toContainText("$1,600");
+});
+
+test("notebook: tabs switch after opening the page straight on a tab (e.g. after a reload)", async ({ page }) => {
+  await login(page);
+  await page.request.put("/api/notebook/settings", { data: { currency: "RWF" } });
+  const tabs = page.getByRole("tablist", { name: "Notebook" });
+  for (const [start, target] of [
+    ["savings", "Budget"],
+    ["savings", "Analytics"],
+    ["analytics", "Notes"],
+    ["notes", "General savings"],
+  ]) {
+    await page.goto(`/notebook?tab=${start}`);
+    await tabs.getByRole("tab", { name: target }).click();
+    await expect(tabs.getByRole("tab", { name: target })).toHaveAttribute("aria-selected", "true");
+  }
 });

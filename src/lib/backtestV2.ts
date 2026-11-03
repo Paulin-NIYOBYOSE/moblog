@@ -11,10 +11,10 @@ import { dateKey } from "./utils";
 
 export const V2_INSTRUMENTS = INSTRUMENTS;
 export const V2_YEARS = [2024, 2025] as const;
-export const V2_DAILY_TARGET = 1;
+export const V2_DAILY_TARGET = 2;
 export const V2_TOTAL = V2_INSTRUMENTS.length * V2_YEARS.length; // 56
 export const V2_START = "2026-11-01";
-export const V2_END = "2026-12-31";
+export const V2_END = "2026-11-30";
 
 /** Fixed (instrument, year, sequence) rows — alphabetical pair, ascending year. */
 export function planSequenceV2(): { instrument: string; year: number; sequence: number }[] {
@@ -41,8 +41,8 @@ export function daysBetweenKeys(from: string, to: string): number {
   return Math.round((keyToDate(to).getTime() - keyToDate(from).getTime()) / 86400000);
 }
 
-export const V2_WINDOW_DAYS = daysBetweenKeys(V2_START, V2_END) + 1; // 61
-export const V2_BUFFER_DAYS = V2_WINDOW_DAYS - Math.ceil(V2_TOTAL / V2_DAILY_TARGET); // 5
+export const V2_WINDOW_DAYS = daysBetweenKeys(V2_START, V2_END) + 1; // 30
+export const V2_BUFFER_DAYS = V2_WINDOW_DAYS - Math.ceil(V2_TOTAL / V2_DAILY_TARGET); // 2
 
 /** The calendar day a session is planned for in the original schedule. */
 export function plannedDate(sequence: number): string {

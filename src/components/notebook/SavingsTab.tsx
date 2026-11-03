@@ -1,9 +1,10 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
-import { ChevronDown, Landmark, PiggyBank, Target } from "lucide-react";
+import { ChevronDown, Landmark, PiggyBank, Target, Wallet } from "lucide-react";
 import Card from "@/components/ui/Card";
 import Modal, { Field } from "@/components/ui/Modal";
+import StatTile from "@/components/ui/StatTile";
 import { formatMoney, generalSavings, monthName, monthOf, monthSummary, monthTitle, savedForItems } from "@/lib/notebook";
 import type { NotebookApi } from "@/lib/useNotebook";
 import { cn } from "@/lib/utils";
@@ -28,16 +29,33 @@ export default function SavingsTab({ nb, today }: { nb: NotebookApi; today: stri
 
   return (
     <div className="space-y-4">
+      {/* What you have saved, at a glance: Total on its own row on phones. */}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+        <StatTile label="Total savings" icon={Wallet} accent="profit" className="col-span-2 sm:col-span-1">
+          <p className="mt-2 font-display text-2xl tabular-nums" data-testid="savings-total">
+            {money(g.balance + forItems)}
+          </p>
+          <p className="text-xs text-muted">general savings + kill list</p>
+        </StatTile>
+        <StatTile label="General" icon={Landmark} accent="gold">
+          <p className={cn("mt-2 font-display text-2xl tabular-nums", g.balance < 0 && "text-loss")} data-testid="general-balance">
+            {money(g.balance)}
+          </p>
+          <p className="text-xs text-muted">general savings{goal ? ` · ${Math.max(0, Math.floor((g.balance / goal) * 100))}% of goal` : ""}</p>
+        </StatTile>
+        <StatTile label="Kill list" icon={Target} accent="accent">
+          <p className="mt-2 font-display text-2xl tabular-nums" data-testid="kill-list-total">
+            {money(forItems)}
+          </p>
+          <p className="text-xs text-muted">saved for things to buy</p>
+        </StatTile>
+      </div>
+
       <Card>
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <p className="flex items-center gap-1.5 text-sm font-medium text-muted">
-              <Landmark className="h-4 w-4 text-profit" /> General savings
-            </p>
-            <p className={cn("mt-1 font-display text-3xl tabular-nums", g.balance < 0 && "text-loss")} data-testid="general-balance">
-              {money(g.balance)}
-            </p>
-          </div>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <p className="flex items-center gap-1.5 text-sm font-semibold">
+            <Landmark className="h-4 w-4 text-gold" /> General savings
+          </p>
           <button type="button" className="btn btn-secondary btn-sm" onClick={() => setEditing(true)} data-testid="general-edit">
             <Target className="h-3.5 w-3.5" /> {goal ? "Edit goal" : "Set a goal"}
           </button>
@@ -62,18 +80,9 @@ export default function SavingsTab({ nb, today }: { nb: NotebookApi; today: stri
             {s.toGeneral === null ? `${monthName(month)}: write down your income to see its share.` : `${monthName(month)} so far: ${signed(s.toGeneral)}.`}
           </span>
         </p>
-        <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs">
-          <button type="button" className="flex items-center gap-1 font-medium text-muted hover:text-foreground" onClick={() => setShowHow((x) => !x)} aria-expanded={showHow}>
-            <ChevronDown className={cn("h-3.5 w-3.5 transition-transform", showHow && "rotate-180")} /> How it adds up
-          </button>
-          <span className="text-muted">
-            All your savings:{" "}
-            <span className="font-semibold text-foreground" data-testid="savings-total">
-              {money(g.balance + forItems)}
-            </span>{" "}
-            — {money(forItems)} of it for the kill list
-          </span>
-        </div>
+        <button type="button" className="mt-3 flex items-center gap-1 text-xs font-medium text-muted hover:text-foreground" onClick={() => setShowHow((x) => !x)} aria-expanded={showHow}>
+          <ChevronDown className={cn("h-3.5 w-3.5 transition-transform", showHow && "rotate-180")} /> How it adds up
+        </button>
         {showHow && (
           <ul className="mt-2 divide-y divide-border rounded-xl border border-border text-sm" data-testid="general-how">
             {g.start > 0 && <Row label="Savings you already had" amount={signed(g.start)} />}

@@ -5,7 +5,12 @@ import Link from "next/link";
 import { AlertTriangle, BookMarked, FlaskConical } from "lucide-react";
 import PageHeader from "@/components/ui/PageHeader";
 import Skeleton from "@/components/ui/Skeleton";
-import { V2Hero, V2PairModal, V2TodayCard, V2UpNext } from "@/components/backtest-v2/V2Overview";
+import {
+  V2Hero,
+  V2PairModal,
+  V2TodayCard,
+  V2UpNext,
+} from "@/components/backtest-v2/V2Overview";
 import V2Schedule from "@/components/backtest-v2/V2Schedule";
 import { useBacktestV2Data } from "@/lib/useBacktestV2Data";
 import { computeV2Summary } from "@/lib/backtestV2";
@@ -14,7 +19,15 @@ import type { BtItem } from "@/lib/types";
 import { todayKey } from "@/lib/utils";
 
 export default function BacktestingV2Page() {
-  const { items, loading, error, patchItem, addImages, removeImage, editImage } = useBacktestV2Data();
+  const {
+    items,
+    loading,
+    error,
+    patchItem,
+    addImages,
+    removeImage,
+    editImage,
+  } = useBacktestV2Data();
   const today = todayKey();
   const summary = useMemo(() => computeV2Summary(items, today), [items, today]);
   const [pair, setPair] = useState<string | null>(null);
@@ -24,24 +37,31 @@ export default function BacktestingV2Page() {
     () =>
       items
         .filter((i) => i.completed && i.completedAt)
-        .sort((a, b) => (b.completedAt as string).localeCompare(a.completedAt as string))[0] ?? null,
+        .sort((a, b) =>
+          (b.completedAt as string).localeCompare(a.completedAt as string),
+        )[0] ?? null,
     [items],
   );
 
-  const toggle = (item: BtItem) => patchItem(item.id, { completed: !item.completed });
+  const toggle = (item: BtItem) =>
+    patchItem(item.id, { completed: !item.completed });
 
   return (
     <div>
       <PageHeader
         eyebrow={
           <>
-            <FlaskConical className="h-3 w-3" /> {STRATEGY_NAME} · progress tracker
+            <FlaskConical className="h-3 w-3" /> {STRATEGY_NAME} · progress
+            tracker
           </>
         }
         title="Backtesting v2"
-        subtitle="28 pairs × 2024–2025 — one pair-year a day from Nov 1 to Dec 31, 2026. Mark each day done; record a pair's results once both years are finished."
+        subtitle="28 pairs × 2024–2025 — two pair-years a day, complete all 56 by Nov 30. Mark each day done; record a pair's results once both years are finished."
         actions={
-          <Link href="/daily-journal?view=playbook" className="btn btn-secondary">
+          <Link
+            href="/daily-journal?view=playbook"
+            className="btn btn-secondary"
+          >
             <BookMarked className="h-4 w-4" /> Strategy playbook
           </Link>
         }
@@ -80,7 +100,12 @@ export default function BacktestingV2Page() {
               <V2UpNext summary={summary} />
             </div>
           </div>
-          <V2Schedule items={items} today={today} onToggle={toggle} onOpenPair={setPair} />
+          <V2Schedule
+            items={items}
+            today={today}
+            onToggle={toggle}
+            onOpenPair={setPair}
+          />
         </div>
       )}
 
