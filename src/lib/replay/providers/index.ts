@@ -1,20 +1,28 @@
 import { TF_SECONDS } from "../time";
 import type { ProviderCoverage, ProviderId, Timeframe } from "../types";
+import { DUKASCOPY } from "./dukascopy";
 import { EXNESS } from "./exness";
 import { FXCM, weekSundayOf } from "./fxcm";
+import { HISTDATA } from "./histdata";
 
-// Automatic history comes from free archives, asked in this order for every
+// Automatic history comes from multiple free archives, asked in this order for every
 // trading week until one has the complete week:
-//   1. FXCM's weekly candle files — about 100 KB a week, fast.
-//   2. Candles built from Exness's tick history — fills the weeks FXCM is
-//      missing, has broken or hasn't published yet (a 5–13 MB month file).
+//   1. FXCM's weekly candle files — about 100 KB a week, fast (22 pairs)
+//   2. Exness tick history — fills missing FXCM weeks (22 pairs)
+//   3. Dukascopy — comprehensive coverage including all JPY crosses (all 28+ pairs)
+//   4. HistData.com — fallback source for missing data (all 28 pairs)
 // A week's candles always come from a single provider, so each week is
 // internally consistent; the weekend closure separates weeks of different
 // providers.
 
-export const PROVIDERS = { fxcm: FXCM, exness: EXNESS } satisfies Record<ProviderId, { name: string; short: string; homepage: string; terms: string; firstYear: number }>;
+export const PROVIDERS = { 
+  fxcm: FXCM, 
+  exness: EXNESS,
+  dukascopy: DUKASCOPY,
+  histdata: HISTDATA,
+} satisfies Record<ProviderId, { name: string; short: string; homepage: string; terms: string; firstYear: number }>;
 
-const ORDER: ProviderId[] = ["fxcm", "exness"];
+const ORDER: ProviderId[] = ["fxcm", "exness", "dukascopy", "histdata"];
 
 /** Providers that carry `symbol` at `resolution`, in the order they are asked. */
 export function sourcesFor(symbol: string, resolution: Timeframe = "M1"): ProviderId[] {
@@ -35,9 +43,9 @@ export function autoEarliestT(): number {
   return Date.UTC(AUTO_FIRST_YEAR, 0, 1) / 1000;
 }
 
-export const AUTO_SOURCE_NOTE = `${FXCM.name}, with any week FXCM lacks built from ${EXNESS.name}`;
+export const AUTO_SOURCE_NOTE = `${FXCM.name}, ${EXNESS.name}, ${DUKASCOPY.name}, and ${HISTDATA.name}`;
 
-export const AUTO_TERMS = "Both archives are published for personal, informational use; prices are indicative. Stored only in your own database, never redistributed.";
+export const AUTO_TERMS = "All archives are published for personal, informational use; prices are indicative. Stored only in your own database, never redistributed.";
 
 const DAY = 86_400;
 
