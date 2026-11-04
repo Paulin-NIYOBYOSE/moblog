@@ -134,7 +134,7 @@ export interface DatasetMeta {
 export type ChunkStatus = "ok" | "partial" | "missing" | "empty";
 
 /** Free archives that automatic history is downloaded from. */
-export type ProviderId = "fxcm" | "exness";
+export type ProviderId = "fxcm" | "exness" | "dukascopy" | "histdata";
 
 export interface ChunkCoverage {
   status: ChunkStatus;
