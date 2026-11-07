@@ -1,18 +1,17 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import {
   CalendarDays,
   Check,
-  ChevronDown,
-  ChevronUp,
+  CheckCircle2,
+  Circle,
   Clock,
-  Coffee,
   Edit2,
+  Grip,
+  MoreVertical,
   Plus,
-  Save,
-  Settings,
-  Sun,
+  StickyNote,
   Trash2,
   X,
 } from "lucide-react";
@@ -20,326 +19,435 @@ import Card, { CardHeader } from "@/components/ui/Card";
 import Badge from "@/components/ui/Badge";
 import Modal from "@/components/ui/Modal";
 import Skeleton from "@/components/ui/Skeleton";
-import { useBacktestSchedule } from "@/lib/useBacktestSchedule";
-import {
-  calculateCompletionDays,
-  generateSessionId,
-} from "@/lib/backtestSchedule";
-import { V2_INSTRUMENTS } from "@/lib/backtestV2";
-import type { BacktestSession } from "@/lib/backtestSchedule";
-import { cn } from "@/lib/utils";
+import { cn, todayKey } from "@/lib/utils";
+
+interface DailyTask {
+  id: string;
+  text: string;
+  completed: boolean;
+  timeBlock?: string; // e.g., "09:00-10:00"
+  priority?: "high" | "medium" | "low";
+}
+
+interface DailyNote {
+  id: string;
+  text: string;
+  timestamp: number;
+}
+
+interface DailyPlan {
+  date: string;
+  tasks: DailyTask[];
+  notes: DailyNote[];
+  focus?: string; // Main focus/goal for the day
+}
+
+// Load/save from localStorage for now (can be moved to API later)
+function loadDailyPlan(date: string): DailyPlan {
+  if (typeof window === "undefined") return { date, tasks: [], notes: [] };
+  const stored = localStorage.getItem(`dailyPlan:${date}`);
+  if (stored) {
+    try {
+      return JSON.parse(stored);
+    } catch {
+      return { date, tasks: [], notes: [] };
+    }
+  }
+  return { date, tasks: [], notes: [] };
+}
+
+function saveDailyPlan(plan: DailyPlan) {
+  if (typeof window === "undefined") return;
+  localStorage.setItem(`dailyPlan:${plan.date}`, JSON.stringify(plan));
+}
 
 export default function DailyPlanTab() {
-  const {
-    config,
-    loading,
-    error,
-    updateWeekdaySessions,
-    updateWeekendSessions,
-    updatePairsPerDay,
-  } = useBacktestSchedule();
-  const [editingWeekday, setEditingWeekday] = useState(false);
-  const [editingWeekend, setEditingWeekend] = useState(false);
-  const [editingTarget, setEditingTarget] = useState(false);
-  const [sessionToEdit, setSessionToEdit] = useState<{
-    session: BacktestSession;
-    type: "weekday" | "weekend";
-    index: number;
+  const [today] = useState(todayKey());
+  const [selectedDate, setSelectedDate] = useState(today);
+  const [plan, setPlan] = useState<DailyPlan>(() => loadDailyPlan(today));
+  const [newTaskText, setNewTaskText] = useState("");
+  const [newNoteText, setNewNoteText] = useState("");
+  const [editingFocus, setEditingFocus] = useState(false);
+  const [focusInput, setFocusInput] = useState("");
+  const [editingTask, setEditingTask] = useState<{
+    id: string;
+    text: string;
   } | null>(null);
-  const [targetInput, setTargetInput] = useState("");
 
-  if (loading) {
-    return (
-      <div className="space-y-5">
-        <Skeleton className="h-32" />
-        <div className="grid gap-5 lg:grid-cols-2">
-          <Skeleton className="h-96" />
-          <Skeleton className="h-96" />
-        </div>
-      </div>
-    );
-  }
+  const updatePlan = (updates: Partial<DailyPlan>) => {
+    const updated = { ...plan, ...updates };
+    setPlan(updated);
+    saveDailyPlan(updated);
+  };
 
-  if (error || !config) {
-    return (
-      <Card padding="lg" className="text-center">
-        <p className="text-sm text-loss">Failed to load schedule: {error}</p>
-        <button
-          type="button"
-          className="btn btn-secondary mt-4"
-          onClick={() => window.location.reload()}
-        >
-          Retry
-        </button>
-      </Card>
-    );
-  }
+  const isToday = selectedDate === today;
 
-  const completionDays = calculateCompletionDays(config.pairsPerDay);
-  const totalPairs = V2_INSTRUMENTS.length * 2;
-
-  const handleAddSession = (type: "weekday" | "weekend") => {
-    const newSession: BacktestSession = {
-      id: generateSessionId(),
-      startTime: "08:00",
-      endTime: "10:00",
-      pairs: [],
+  // Task management
+  const addTask = () => {
+    if (!newTaskText.trim()) return;
+    const newTask: DailyTask = {
+      id: `task_${Date.now()}`,
+      text: newTaskText.trim(),
+      completed: false,
+      priority: "medium",
     };
-
-    if (type === "weekday") {
-      setEditingWeekday(true);
-      void updateWeekdaySessions([...config.weekday.sessions, newSession]);
-    } else {
-      setEditingWeekend(true);
-      void updateWeekendSessions([...config.weekend.sessions, newSession]);
-    }
+    updatePlan({ tasks: [...plan.tasks, newTask] });
+    setNewTaskText("");
   };
 
-  const handleDeleteSession = async (
-    type: "weekday" | "weekend",
-    index: number,
+  const toggleTask = (taskId: string) => {
+    updatePlan({
+      tasks: plan.tasks.map((t) =>
+        t.id === taskId ? { ...t, completed: !t.completed } : t,
+      ),
+    });
+  };
+
+  const deleteTask = (taskId: string) => {
+    updatePlan({ tasks: plan.tasks.filter((t) => t.id !== taskId) });
+  };
+
+  const updateTaskText = (taskId: string, text: string) => {
+    updatePlan({
+      tasks: plan.tasks.map((t) => (t.id === taskId ? { ...t, text } : t)),
+    });
+  };
+
+  const updateTaskPriority = (
+    taskId: string,
+    priority: DailyTask["priority"],
   ) => {
-    if (type === "weekday") {
-      const sessions = config.weekday.sessions.filter((_, i) => i !== index);
-      if (sessions.length === 0) {
-        alert("You must have at least one weekday session");
-        return;
-      }
-      await updateWeekdaySessions(sessions);
-    } else {
-      const sessions = config.weekend.sessions.filter((_, i) => i !== index);
-      if (sessions.length === 0) {
-        alert("You must have at least one weekend session");
-        return;
-      }
-      await updateWeekendSessions(sessions);
-    }
+    updatePlan({
+      tasks: plan.tasks.map((t) => (t.id === taskId ? { ...t, priority } : t)),
+    });
   };
 
-  const handleMoveSession = async (
-    type: "weekday" | "weekend",
-    index: number,
-    direction: "up" | "down",
-  ) => {
-    const sessions =
-      type === "weekday"
-        ? [...config.weekday.sessions]
-        : [...config.weekend.sessions];
-    const newIndex = direction === "up" ? index - 1 : index + 1;
-
-    if (newIndex < 0 || newIndex >= sessions.length) return;
-
-    [sessions[index], sessions[newIndex]] = [
-      sessions[newIndex],
-      sessions[index],
-    ];
-
-    if (type === "weekday") {
-      await updateWeekdaySessions(sessions);
-    } else {
-      await updateWeekendSessions(sessions);
-    }
+  const updateTaskTimeBlock = (taskId: string, timeBlock?: string) => {
+    updatePlan({
+      tasks: plan.tasks.map((t) => (t.id === taskId ? { ...t, timeBlock } : t)),
+    });
   };
 
-  const handleUpdateTarget = async () => {
-    const newTarget = parseInt(targetInput);
-    if (isNaN(newTarget) || newTarget < 1) {
-      alert("Please enter a valid number (at least 1)");
-      return;
-    }
-    await updatePairsPerDay(newTarget);
-    setEditingTarget(false);
+  // Note management
+  const addNote = () => {
+    if (!newNoteText.trim()) return;
+    const newNote: DailyNote = {
+      id: `note_${Date.now()}`,
+      text: newNoteText.trim(),
+      timestamp: Date.now(),
+    };
+    updatePlan({ notes: [...plan.notes, newNote] });
+    setNewNoteText("");
+  };
+
+  const deleteNote = (noteId: string) => {
+    updatePlan({ notes: plan.notes.filter((n) => n.id !== noteId) });
+  };
+
+  // Focus management
+  const updateFocus = () => {
+    updatePlan({ focus: focusInput.trim() || undefined });
+    setEditingFocus(false);
+  };
+
+  // Stats
+  const stats = useMemo(() => {
+    const total = plan.tasks.length;
+    const completed = plan.tasks.filter((t) => t.completed).length;
+    const highPriority = plan.tasks.filter(
+      (t) => t.priority === "high" && !t.completed,
+    ).length;
+    return { total, completed, remaining: total - completed, highPriority };
+  }, [plan.tasks]);
+
+  // Date navigation
+  const changeDate = (days: number) => {
+    const current = new Date(selectedDate);
+    current.setDate(current.getDate() + days);
+    const newDate = current.toISOString().split("T")[0];
+    setSelectedDate(newDate);
+    setPlan(loadDailyPlan(newDate));
+  };
+
+  const goToToday = () => {
+    setSelectedDate(today);
+    setPlan(loadDailyPlan(today));
+  };
+
+  const formatDate = (dateStr: string) => {
+    const date = new Date(dateStr + "T00:00:00");
+    return date.toLocaleDateString("en-US", {
+      weekday: "long",
+      month: "long",
+      day: "numeric",
+      year: "numeric",
+    });
   };
 
   return (
     <div className="space-y-5">
+      {/* Date Navigation */}
       <Card
         padding="lg"
         className="bg-gradient-to-br from-accent-soft/30 to-transparent"
       >
-        <div className="flex items-start justify-between gap-4">
-          <div className="flex items-start gap-4">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-accent text-white">
-              <CalendarDays className="h-5 w-5" />
-            </div>
-            <div>
+        <div className="flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => changeDate(-1)}
+              className="btn btn-ghost btn-sm"
+              title="Previous day"
+            >
+              ←
+            </button>
+            <div className="text-center">
               <h3 className="font-display text-xl font-semibold">
-                Backtesting Schedule Planner
+                {formatDate(selectedDate)}
               </h3>
-              <p className="mt-1 text-sm text-muted">
-                Customize your daily backtesting sessions to complete{" "}
-                {totalPairs} pair-years by Nov 30, 2026
-              </p>
+              {isToday && (
+                <Badge tone="accent" className="mt-1">
+                  Today
+                </Badge>
+              )}
             </div>
+            <button
+              type="button"
+              onClick={() => changeDate(1)}
+              className="btn btn-ghost btn-sm"
+              title="Next day"
+            >
+              →
+            </button>
           </div>
+          {!isToday && (
+            <button
+              type="button"
+              onClick={goToToday}
+              className="btn btn-secondary btn-sm"
+            >
+              <CalendarDays className="h-3.5 w-3.5" /> Today
+            </button>
+          )}
         </div>
       </Card>
 
-      {/* Daily Target Card */}
-      <Card padding="lg">
-        <div className="flex items-center justify-between">
-          <div>
-            <CardHeader
-              icon={Clock}
-              tone="gold"
-              title={`Daily Target: ${config.pairsPerDay} pair-year${config.pairsPerDay > 1 ? "s" : ""}`}
-              subtitle={`Complete all ${totalPairs} in ${completionDays} days · finish by Nov ${completionDays <= 30 ? completionDays : "30+"}`}
-            />
+      {/* Stats */}
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <Card padding="md" className="text-center">
+          <div className="text-2xl font-bold">{stats.total}</div>
+          <div className="text-xs text-muted">Total tasks</div>
+        </Card>
+        <Card padding="md" className="text-center">
+          <div className="text-2xl font-bold text-profit">
+            {stats.completed}
           </div>
+          <div className="text-xs text-muted">Completed</div>
+        </Card>
+        <Card padding="md" className="text-center">
+          <div className="text-2xl font-bold text-accent">
+            {stats.remaining}
+          </div>
+          <div className="text-xs text-muted">Remaining</div>
+        </Card>
+        <Card padding="md" className="text-center">
+          <div className="text-2xl font-bold text-loss">
+            {stats.highPriority}
+          </div>
+          <div className="text-xs text-muted">High priority</div>
+        </Card>
+      </div>
+
+      {/* Main Focus */}
+      <Card padding="lg">
+        <div className="flex items-center justify-between mb-3">
+          <CardHeader
+            icon={Clock}
+            tone="gold"
+            title="Today's Main Focus"
+            subtitle="What's the one thing you want to accomplish today?"
+          />
           <button
             type="button"
             onClick={() => {
-              setTargetInput(String(config.pairsPerDay));
-              setEditingTarget(true);
+              setFocusInput(plan.focus || "");
+              setEditingFocus(true);
             }}
-            className="btn btn-secondary btn-sm"
+            className="btn btn-ghost btn-sm"
           >
-            <Edit2 className="h-3.5 w-3.5" /> Adjust
+            <Edit2 className="h-3.5 w-3.5" />
           </button>
         </div>
+        {plan.focus ? (
+          <div className="rounded-xl border border-accent/30 bg-accent-soft p-4">
+            <p className="text-lg font-medium text-accent-emphasis">
+              {plan.focus}
+            </p>
+          </div>
+        ) : (
+          <div className="rounded-xl border-2 border-dashed border-border bg-surface-2/60 p-4 text-center text-sm text-muted">
+            No focus set for this day. Click the edit button to add one.
+          </div>
+        )}
       </Card>
 
-      {/* Schedule Columns */}
-      <div className="grid gap-5 lg:grid-cols-2">
-        <ScheduleColumn
-          title="Weekday Schedule"
-          subtitle="Monday – Friday"
-          sessions={config.weekday.sessions}
-          isEditing={editingWeekday}
-          onToggleEdit={() => setEditingWeekday(!editingWeekday)}
-          onAddSession={() => handleAddSession("weekday")}
-          onDeleteSession={(index) => handleDeleteSession("weekday", index)}
-          onMoveSession={(index, direction) =>
-            handleMoveSession("weekday", index, direction)
-          }
-          onEditSession={(session, index) =>
-            setSessionToEdit({ session, type: "weekday", index })
-          }
-          icon={Sun}
-        />
-        <ScheduleColumn
-          title="Weekend Schedule"
-          subtitle="Saturday & Sunday"
-          sessions={config.weekend.sessions}
-          isEditing={editingWeekend}
-          onToggleEdit={() => setEditingWeekend(!editingWeekend)}
-          onAddSession={() => handleAddSession("weekend")}
-          onDeleteSession={(index) => handleDeleteSession("weekend", index)}
-          onMoveSession={(index, direction) =>
-            handleMoveSession("weekend", index, direction)
-          }
-          onEditSession={(session, index) =>
-            setSessionToEdit({ session, type: "weekend", index })
-          }
-          icon={Coffee}
-        />
-      </div>
-
-      {/* Tips Card */}
+      {/* Tasks Section */}
       <Card padding="lg">
         <CardHeader
-          icon={Settings}
-          tone="muted"
-          title="Tips for staying on track"
-          subtitle="Consistency is key to completing your backtesting goal"
+          icon={CheckCircle2}
+          title="Tasks"
+          subtitle={`${stats.completed} of ${stats.total} completed`}
         />
-        <div className="mt-4 grid gap-3 sm:grid-cols-2">
-          <div className="rounded-xl border border-border bg-surface-2 p-3.5">
-            <div className="text-sm font-semibold">📅 Block your time</div>
-            <p className="mt-1 text-xs text-muted">
-              Add backtesting sessions to your calendar as non-negotiable
-              appointments with yourself.
-            </p>
-          </div>
-          <div className="rounded-xl border border-border bg-surface-2 p-3.5">
-            <div className="text-sm font-semibold">⏰ Same time daily</div>
-            <p className="mt-1 text-xs text-muted">
-              Build the habit by backtesting at consistent times—morning and
-              evening work well for most.
-            </p>
-          </div>
-          <div className="rounded-xl border border-border bg-surface-2 p-3.5">
-            <div className="text-sm font-semibold">✅ Mark as done</div>
-            <p className="mt-1 text-xs text-muted">
-              Visit the Backtesting v2 page to track progress and mark
-              pair-years complete as you go.
-            </p>
-          </div>
-          <div className="rounded-xl border border-border bg-surface-2 p-3.5">
-            <div className="text-sm font-semibold">🔄 Adjust as needed</div>
-            <p className="mt-1 text-xs text-muted">
-              Your schedule is flexible—change times, add sessions, or adjust
-              your daily target anytime.
-            </p>
-          </div>
+
+        {/* Add new task */}
+        <div className="mt-4 flex gap-2">
+          <input
+            type="text"
+            value={newTaskText}
+            onChange={(e) => setNewTaskText(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && addTask()}
+            placeholder="Add a new task..."
+            className="input flex-1"
+          />
+          <button
+            type="button"
+            onClick={addTask}
+            className="btn btn-primary"
+            disabled={!newTaskText.trim()}
+          >
+            <Plus className="h-4 w-4" /> Add
+          </button>
+        </div>
+
+        {/* Task list */}
+        <div className="mt-4 space-y-2">
+          {plan.tasks.length === 0 ? (
+            <div className="rounded-xl border-2 border-dashed border-border bg-surface-2/60 p-6 text-center text-sm text-muted">
+              No tasks yet. Add your first task above to get started!
+            </div>
+          ) : (
+            plan.tasks.map((task) => (
+              <TaskItem
+                key={task.id}
+                task={task}
+                onToggle={() => toggleTask(task.id)}
+                onDelete={() => deleteTask(task.id)}
+                onUpdateText={(text) => updateTaskText(task.id, text)}
+                onUpdatePriority={(priority) =>
+                  updateTaskPriority(task.id, priority)
+                }
+                onUpdateTimeBlock={(timeBlock) =>
+                  updateTaskTimeBlock(task.id, timeBlock)
+                }
+                editingTask={editingTask}
+                setEditingTask={setEditingTask}
+              />
+            ))
+          )}
         </div>
       </Card>
 
-      {/* Edit Session Modal */}
-      {sessionToEdit && (
-        <SessionEditModal
-          session={sessionToEdit.session}
-          type={sessionToEdit.type}
-          onClose={() => setSessionToEdit(null)}
-          onSave={async (updated) => {
-            const sessions =
-              sessionToEdit.type === "weekday"
-                ? [...config.weekday.sessions]
-                : [...config.weekend.sessions];
-            sessions[sessionToEdit.index] = updated;
-
-            if (sessionToEdit.type === "weekday") {
-              await updateWeekdaySessions(sessions);
-            } else {
-              await updateWeekendSessions(sessions);
-            }
-            setSessionToEdit(null);
-          }}
+      {/* Notes Section */}
+      <Card padding="lg">
+        <CardHeader
+          icon={StickyNote}
+          title="Notes & Reflections"
+          subtitle="Quick notes, ideas, and reflections for this day"
         />
-      )}
 
-      {/* Edit Target Modal */}
+        {/* Add new note */}
+        <div className="mt-4 flex gap-2">
+          <textarea
+            value={newNoteText}
+            onChange={(e) => setNewNoteText(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                addNote();
+              }
+            }}
+            placeholder="Add a note... (Cmd/Ctrl+Enter to save)"
+            className="input min-h-[80px] flex-1 resize-y"
+          />
+          <button
+            type="button"
+            onClick={addNote}
+            className="btn btn-primary self-start"
+            disabled={!newNoteText.trim()}
+          >
+            <Plus className="h-4 w-4" /> Add
+          </button>
+        </div>
+
+        {/* Notes list */}
+        <div className="mt-4 space-y-3">
+          {plan.notes.length === 0 ? (
+            <div className="rounded-xl border-2 border-dashed border-border bg-surface-2/60 p-6 text-center text-sm text-muted">
+              No notes yet. Add your first note above!
+            </div>
+          ) : (
+            plan.notes
+              .slice()
+              .reverse()
+              .map((note) => (
+                <div
+                  key={note.id}
+                  className="group relative rounded-xl border border-border bg-surface-2 p-4"
+                >
+                  <div className="flex items-start gap-3">
+                    <div className="flex-1">
+                      <p className="text-sm leading-relaxed whitespace-pre-wrap">
+                        {note.text}
+                      </p>
+                      <p className="mt-2 text-xs text-faint">
+                        {new Date(note.timestamp).toLocaleTimeString("en-US", {
+                          hour: "numeric",
+                          minute: "2-digit",
+                        })}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => deleteNote(note.id)}
+                      className="opacity-0 group-hover:opacity-100 btn btn-ghost btn-sm text-loss"
+                      title="Delete note"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                </div>
+              ))
+          )}
+        </div>
+      </Card>
+
+      {/* Edit Focus Modal */}
       <Modal
-        open={editingTarget}
-        onClose={() => setEditingTarget(false)}
+        open={editingFocus}
+        onClose={() => setEditingFocus(false)}
         size="sm"
         icon={Clock}
-        title="Adjust Daily Target"
-        subtitle="Change how many pair-years you want to complete per day"
+        title="Set Your Main Focus"
+        subtitle="What's the one thing that matters most today?"
       >
         <div className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-foreground mb-2">
-              Pair-years per day
-            </label>
-            <input
-              type="number"
-              min="1"
-              value={targetInput}
-              onChange={(e) => setTargetInput(e.target.value)}
-              className="input"
-              placeholder="e.g., 2"
-            />
-            <p className="mt-2 text-xs text-muted">
-              At {targetInput || config.pairsPerDay} per day, you'll complete
-              all {totalPairs} in{" "}
-              {calculateCompletionDays(
-                parseInt(targetInput) || config.pairsPerDay,
-              )}{" "}
-              days
-            </p>
-          </div>
+          <textarea
+            value={focusInput}
+            onChange={(e) => setFocusInput(e.target.value)}
+            placeholder="e.g., Complete the client proposal, Study for certification exam..."
+            className="input min-h-[100px] resize-y"
+            autoFocus
+          />
           <div className="flex gap-2">
             <button
               type="button"
-              onClick={handleUpdateTarget}
+              onClick={updateFocus}
               className="btn btn-primary flex-1"
             >
               <Check className="h-4 w-4" /> Save
             </button>
             <button
               type="button"
-              onClick={() => setEditingTarget(false)}
+              onClick={() => setEditingFocus(false)}
               className="btn btn-secondary"
             >
               Cancel
@@ -351,304 +459,250 @@ export default function DailyPlanTab() {
   );
 }
 
-function ScheduleColumn({
-  title,
-  subtitle,
-  sessions,
-  isEditing,
-  onToggleEdit,
-  onAddSession,
-  onDeleteSession,
-  onMoveSession,
-  onEditSession,
-  icon: HeaderIcon,
+function TaskItem({
+  task,
+  onToggle,
+  onDelete,
+  onUpdateText,
+  onUpdatePriority,
+  onUpdateTimeBlock,
+  editingTask,
+  setEditingTask,
 }: {
-  title: string;
-  subtitle: string;
-  sessions: BacktestSession[];
-  isEditing: boolean;
-  onToggleEdit: () => void;
-  onAddSession: () => void;
-  onDeleteSession: (index: number) => void;
-  onMoveSession: (index: number, direction: "up" | "down") => void;
-  onEditSession: (session: BacktestSession, index: number) => void;
-  icon: React.ElementType;
+  task: DailyTask;
+  onToggle: () => void;
+  onDelete: () => void;
+  onUpdateText: (text: string) => void;
+  onUpdatePriority: (priority: DailyTask["priority"]) => void;
+  onUpdateTimeBlock: (timeBlock?: string) => void;
+  editingTask: { id: string; text: string } | null;
+  setEditingTask: (task: { id: string; text: string } | null) => void;
 }) {
+  const [showMenu, setShowMenu] = useState(false);
+  const [editingTime, setEditingTime] = useState(false);
+  const [timeInput, setTimeInput] = useState(task.timeBlock || "");
+
+  const isEditing = editingTask?.id === task.id;
+
+  const priorityColors = {
+    high: "text-loss border-loss/30 bg-loss-soft",
+    medium: "text-accent border-accent/30 bg-accent-soft",
+    low: "text-muted border-border bg-surface-2",
+  };
+
+  const priorityLabels = {
+    high: "High",
+    medium: "Med",
+    low: "Low",
+  };
+
   return (
-    <Card padding="lg">
-      <div className="flex items-center justify-between mb-4">
-        <CardHeader icon={HeaderIcon} title={title} subtitle={subtitle} />
-        <button
-          type="button"
-          onClick={onToggleEdit}
-          className={cn(
-            "btn btn-sm",
-            isEditing ? "btn-primary" : "btn-secondary",
-          )}
-        >
-          {isEditing ? (
-            <>
-              <Check className="h-3.5 w-3.5" /> Done
-            </>
-          ) : (
-            <>
-              <Edit2 className="h-3.5 w-3.5" /> Edit
-            </>
-          )}
-        </button>
-      </div>
-
-      <div className="space-y-2">
-        {sessions.map((session, index) => (
-          <div
-            key={session.id}
-            className="flex items-center gap-2 rounded-xl border border-accent/30 bg-accent-soft p-3"
-          >
-            {isEditing && (
-              <div className="flex flex-col gap-1">
-                <button
-                  type="button"
-                  onClick={() => onMoveSession(index, "up")}
-                  disabled={index === 0}
-                  className="flex h-5 w-5 items-center justify-center rounded bg-card text-muted hover:text-foreground disabled:opacity-30"
-                  title="Move up"
-                >
-                  <ChevronUp className="h-3 w-3" />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => onMoveSession(index, "down")}
-                  disabled={index === sessions.length - 1}
-                  className="flex h-5 w-5 items-center justify-center rounded bg-card text-muted hover:text-foreground disabled:opacity-30"
-                  title="Move down"
-                >
-                  <ChevronDown className="h-3 w-3" />
-                </button>
-              </div>
-            )}
-
-            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-accent text-white">
-              <CalendarDays className="h-4 w-4" />
-            </div>
-
-            <div className="min-w-0 flex-1">
-              <div className="flex items-baseline gap-2">
-                <span className="text-xs font-bold tabular-nums text-accent">
-                  {session.startTime} – {session.endTime}
-                </span>
-                <Badge tone="accent" className="text-[10px]">
-                  Session {index + 1}
-                </Badge>
-              </div>
-              <div className="mt-0.5 text-sm font-medium text-accent-emphasis">
-                {session.pairs.length > 0
-                  ? `${session.pairs.length} pair${session.pairs.length > 1 ? "s" : ""}: ${session.pairs.slice(0, 3).join(", ")}${session.pairs.length > 3 ? "..." : ""}`
-                  : "No pairs assigned"}
-              </div>
-            </div>
-
-            {isEditing && (
-              <div className="flex gap-1">
-                <button
-                  type="button"
-                  onClick={() => onEditSession(session, index)}
-                  className="flex h-7 w-7 items-center justify-center rounded-lg bg-card text-accent hover:bg-accent hover:text-white"
-                  title="Edit session"
-                >
-                  <Edit2 className="h-3.5 w-3.5" />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => onDeleteSession(index)}
-                  className="flex h-7 w-7 items-center justify-center rounded-lg bg-card text-loss hover:bg-loss hover:text-white"
-                  title="Delete session"
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                </button>
-              </div>
-            )}
-          </div>
-        ))}
-      </div>
-
-      {isEditing && (
-        <button
-          type="button"
-          onClick={onAddSession}
-          className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl border-2 border-dashed border-border bg-surface-2 py-3 text-sm font-medium text-muted hover:border-accent hover:text-accent"
-        >
-          <Plus className="h-4 w-4" /> Add session
-        </button>
+    <div
+      className={cn(
+        "group relative flex items-start gap-3 rounded-xl border p-3 transition-colors",
+        task.completed
+          ? "border-border bg-surface-2/60 opacity-60"
+          : "border-border bg-card hover:border-border-strong",
       )}
+    >
+      {/* Drag handle */}
+      <button
+        type="button"
+        className="mt-0.5 cursor-grab opacity-0 group-hover:opacity-40 hover:opacity-100"
+        title="Drag to reorder"
+      >
+        <Grip className="h-4 w-4 text-muted" />
+      </button>
 
-      <div className="mt-4 rounded-xl border border-border bg-surface-2/60 p-3">
-        <div className="flex items-center gap-2 text-xs text-muted">
-          <Clock className="h-3.5 w-3.5" />
-          <span>
-            <span className="font-semibold text-foreground">
-              {sessions.length} session{sessions.length > 1 ? "s" : ""}
-            </span>{" "}
-            configured
-          </span>
+      {/* Checkbox */}
+      <button
+        type="button"
+        onClick={onToggle}
+        className={cn(
+          "mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-md border-2 transition-colors",
+          task.completed
+            ? "border-profit bg-profit text-white"
+            : "border-border-strong hover:border-accent",
+        )}
+      >
+        {task.completed && <Check className="h-3.5 w-3.5" strokeWidth={3} />}
+      </button>
+
+      {/* Content */}
+      <div className="min-w-0 flex-1">
+        {isEditing ? (
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={editingTask.text}
+              onChange={(e) =>
+                setEditingTask({ ...editingTask, text: e.target.value })
+              }
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  onUpdateText(editingTask.text);
+                  setEditingTask(null);
+                } else if (e.key === "Escape") {
+                  setEditingTask(null);
+                }
+              }}
+              onBlur={() => {
+                onUpdateText(editingTask.text);
+                setEditingTask(null);
+              }}
+              className="input input-sm flex-1"
+              autoFocus
+            />
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setEditingTask({ id: task.id, text: task.text })}
+            className={cn(
+              "text-left text-sm font-medium transition-colors hover:text-accent",
+              task.completed && "line-through",
+            )}
+          >
+            {task.text}
+          </button>
+        )}
+
+        {/* Meta info */}
+        <div className="mt-1.5 flex flex-wrap items-center gap-2">
+          <Badge
+            tone={
+              task.priority === "high"
+                ? "loss"
+                : task.priority === "medium"
+                  ? "accent"
+                  : "muted"
+            }
+            className="text-[10px]"
+          >
+            {priorityLabels[task.priority || "medium"]}
+          </Badge>
+
+          {task.timeBlock && (
+            <button
+              type="button"
+              onClick={() => {
+                setTimeInput(task.timeBlock || "");
+                setEditingTime(true);
+              }}
+              className="flex items-center gap-1 rounded-md border border-border bg-surface-2 px-2 py-0.5 text-[10px] font-medium hover:border-accent"
+            >
+              <Clock className="h-2.5 w-2.5" />
+              {task.timeBlock}
+            </button>
+          )}
+
+          {!task.timeBlock && !editingTime && (
+            <button
+              type="button"
+              onClick={() => setEditingTime(true)}
+              className="rounded-md border border-dashed border-border px-2 py-0.5 text-[10px] text-muted hover:border-accent hover:text-accent"
+            >
+              + Time
+            </button>
+          )}
+
+          {editingTime && (
+            <div className="flex gap-1">
+              <input
+                type="text"
+                value={timeInput}
+                onChange={(e) => setTimeInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    onUpdateTimeBlock(timeInput.trim() || undefined);
+                    setEditingTime(false);
+                  } else if (e.key === "Escape") {
+                    setEditingTime(false);
+                  }
+                }}
+                placeholder="e.g., 9-10am"
+                className="input input-sm w-24 text-xs"
+                autoFocus
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  onUpdateTimeBlock(timeInput.trim() || undefined);
+                  setEditingTime(false);
+                }}
+                className="btn btn-ghost btn-sm"
+              >
+                <Check className="h-3 w-3" />
+              </button>
+            </div>
+          )}
         </div>
       </div>
-    </Card>
-  );
-}
 
-function SessionEditModal({
-  session,
-  type,
-  onClose,
-  onSave,
-}: {
-  session: BacktestSession;
-  type: "weekday" | "weekend";
-  onClose: () => void;
-  onSave: (session: BacktestSession) => Promise<void>;
-}) {
-  const [startTime, setStartTime] = useState(session.startTime);
-  const [endTime, setEndTime] = useState(session.endTime);
-  const [selectedPairs, setSelectedPairs] = useState<Set<string>>(
-    new Set(session.pairs),
-  );
-  const [saving, setSaving] = useState(false);
+      {/* Actions menu */}
+      <div className="relative">
+        <button
+          type="button"
+          onClick={() => setShowMenu(!showMenu)}
+          className="opacity-0 group-hover:opacity-100 btn btn-ghost btn-sm"
+        >
+          <MoreVertical className="h-3.5 w-3.5" />
+        </button>
 
-  const togglePair = (pair: string) => {
-    const newSet = new Set(selectedPairs);
-    if (newSet.has(pair)) {
-      newSet.delete(pair);
-    } else {
-      newSet.add(pair);
-    }
-    setSelectedPairs(newSet);
-  };
-
-  const handleSave = async () => {
-    if (startTime >= endTime) {
-      alert("End time must be after start time");
-      return;
-    }
-
-    setSaving(true);
-    try {
-      await onSave({
-        ...session,
-        startTime,
-        endTime,
-        pairs: Array.from(selectedPairs),
-      });
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  return (
-    <Modal
-      open={true}
-      onClose={onClose}
-      size="lg"
-      icon={CalendarDays}
-      title="Edit Backtesting Session"
-      subtitle={`Configure time and pairs for this ${type} session`}
-    >
-      <div className="space-y-5">
-        {/* Time Selection */}
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div>
-            <label className="block text-sm font-medium text-foreground mb-2">
-              Start Time
-            </label>
-            <input
-              type="time"
-              value={startTime}
-              onChange={(e) => setStartTime(e.target.value)}
-              className="input"
+        {showMenu && (
+          <>
+            <div
+              className="fixed inset-0 z-10"
+              onClick={() => setShowMenu(false)}
             />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-foreground mb-2">
-              End Time
-            </label>
-            <input
-              type="time"
-              value={endTime}
-              onChange={(e) => setEndTime(e.target.value)}
-              className="input"
-            />
-          </div>
-        </div>
-
-        {/* Pair Selection */}
-        <div>
-          <label className="block text-sm font-medium text-foreground mb-2">
-            Currency Pairs ({selectedPairs.size} selected)
-          </label>
-          <div className="max-h-64 overflow-y-auto rounded-xl border border-border bg-surface-2 p-2">
-            <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3">
-              {V2_INSTRUMENTS.map((pair) => {
-                const isSelected = selectedPairs.has(pair);
-                return (
+            <div className="absolute right-0 top-8 z-20 w-40 rounded-lg border border-border bg-card shadow-xl">
+              <div className="p-1">
+                <div className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-muted">
+                  Priority
+                </div>
+                {(["high", "medium", "low"] as const).map((priority) => (
                   <button
-                    key={pair}
+                    key={priority}
                     type="button"
-                    onClick={() => togglePair(pair)}
+                    onClick={() => {
+                      onUpdatePriority(priority);
+                      setShowMenu(false);
+                    }}
                     className={cn(
-                      "flex items-center gap-2 rounded-lg border px-3 py-2 text-left text-sm font-medium transition-colors",
-                      isSelected
-                        ? "border-accent bg-accent-soft text-accent"
-                        : "border-border bg-card hover:border-border-strong",
+                      "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-surface-2",
+                      task.priority === priority && "bg-surface-2 font-medium",
                     )}
                   >
-                    <div
+                    <Circle
                       className={cn(
-                        "flex h-4 w-4 shrink-0 items-center justify-center rounded",
-                        isSelected
-                          ? "bg-accent text-white"
-                          : "border-2 border-border-strong",
+                        "h-2 w-2",
+                        priority === "high"
+                          ? "fill-loss text-loss"
+                          : priority === "medium"
+                            ? "fill-accent text-accent"
+                            : "fill-muted text-muted",
                       )}
-                    >
-                      {isSelected && (
-                        <Check className="h-3 w-3" strokeWidth={3} />
-                      )}
-                    </div>
-                    {pair}
+                    />
+                    {priorityLabels[priority]} priority
                   </button>
-                );
-              })}
+                ))}
+                <div className="my-1 border-t border-border" />
+                <button
+                  type="button"
+                  onClick={() => {
+                    onDelete();
+                    setShowMenu(false);
+                  }}
+                  className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-loss hover:bg-loss-soft"
+                >
+                  <Trash2 className="h-3 w-3" />
+                  Delete task
+                </button>
+              </div>
             </div>
-          </div>
-          <p className="mt-2 text-xs text-muted">
-            Select which currency pairs you want to backtest in this session
-          </p>
-        </div>
-
-        {/* Action Buttons */}
-        <div className="flex gap-2">
-          <button
-            type="button"
-            onClick={handleSave}
-            disabled={saving}
-            className="btn btn-primary flex-1"
-          >
-            {saving ? (
-              "Saving..."
-            ) : (
-              <>
-                <Save className="h-4 w-4" /> Save Session
-              </>
-            )}
-          </button>
-          <button
-            type="button"
-            onClick={onClose}
-            disabled={saving}
-            className="btn btn-secondary"
-          >
-            <X className="h-4 w-4" /> Cancel
-          </button>
-        </div>
+          </>
+        )}
       </div>
-    </Modal>
+    </div>
   );
 }
