@@ -217,6 +217,8 @@ export async function updateDatasetMeta(id: string, patch: { name?: string; addF
       missingCandles: false,
     };
     await tx.replayDataset.update({ where: { id }, data: { meta: next as unknown as Prisma.InputJsonValue } });
+  }, {
+    timeout: 15000, // Increase timeout to 15 seconds
   });
 }
 
@@ -515,6 +517,8 @@ export async function patchSession(id: string, patch: SessionPatch): Promise<Rep
       },
     });
     return rowToSession(updated);
+  }, {
+    timeout: 15000, // Increase timeout to 15 seconds
   });
 }
 
